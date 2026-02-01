@@ -1,0 +1,333 @@
+import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { PrismaService } from '@/prisma/prisma.service';
+import { ConnectionStrength } from '@prisma/client';
+import { CreateConnectionDto } from './dto/create-connection.dto';
+import { UpdateConnectionDto } from './dto/update-connection.dto';
+import { GraphData, GraphNode, GraphEdge } from './types/graph.types';
+
+@Injectable()
+export class ConnectionsService {
+  constructor(private readonly prisma: PrismaService) {}
+
+  async create(userId: string, dto: CreateConnectionDto) {
+    // Verifica se o contato existe e pertence ao usuário
+    const contact = await this.prisma.contact.findUnique({
+      where: { id: dto.contactId },
+    });
+
+    if (!contact || contact.ownerId !== userId) {
+      throw new NotFoundException('Contato não encontrado');
+    }
+
+    // Verifica se a conexão já existe
+    const existing = await this.prisma.connection.findUnique({
+      where: {
+        fromUserId_contactId: {
+          fromUserId: userId,
+          contactId: dto.contactId,
+        },
+      },
+    });
+
+    if (existing) {
+      throw new ConflictException('Conexão já existe com este contato');
+    }
+
+    return this.prisma.connection.create({
+      data: {
+        fromUserId: userId,
+        contactId: dto.contactId,
+        strength: dto.strength || ConnectionStrength.MODERATE,
+        context: dto.context,
+      },
+      include: {
+        contact: {
+          include: {
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async findAll(userId: string) {
+    return this.prisma.connection.findMany({
+      where: { fromUserId: userId },
+      include: {
+        contact: {
+          include: {
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
+          },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async update(id: string, userId: string, dto: UpdateConnectionDto) {
+    const connection = await this.prisma.connection.findUnique({
+      where: { id },
+    });
+
+    if (!connection || connection.fromUserId !== userId) {
+      throw new NotFoundException('Conexão não encontrada');
+    }
+
+    return this.prisma.connection.update({
+      where: { id },
+      data: dto,
+      include: {
+        contact: true,
+      },
+    });
+  }
+
+  async delete(id: string, userId: string) {
+    const connection = await this.prisma.connection.findUnique({
+      where: { id },
+    });
+
+    if (!connection || connection.fromUserId !== userId) {
+      throw new NotFoundException('Conexão não encontrada');
+    }
+
+    await this.prisma.connection.delete({
+      where: { id },
+    });
+  }
+
+  async getGraph(userId: string, depth = 2): Promise<GraphData> {
+    const nodes: GraphNode[] = [];
+    const edges: GraphEdge[] = [];
+    const visitedContacts = new Set<string>();
+
+    // Adiciona o usuário como nó central
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+
+    nodes.push({
+      id: userId,
+      name: user.name,
+      type: 'user',
+      degree: 0,
+    });
+
+    // Busca conexões de 1º grau
+    const firstDegreeConnections = await this.prisma.connection.findMany({
+      where: { fromUserId: userId },
+      include: {
+        contact: {
+          include: {
+            tags: {
+              include: {
+                tag: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    for (const conn of firstDegreeConnections) {
+      if (!visitedContacts.has(conn.contactId)) {
+        visitedContacts.add(conn.contactId);
+
+        nodes.push({
+          id: conn.contactId,
+          name: conn.contact.name,
+          type: 'contact',
+          degree: 1,
+          tags: conn.contact.tags.map((ct) => ({
+            id: ct.tag.id,
+            name: ct.tag.name,
+            color: ct.tag.color,
+          })),
+          company: conn.contact.company,
+          position: conn.contact.position,
+        });
+
+        edges.push({
+          source: userId,
+          target: conn.contactId,
+          strength: conn.strength,
+        });
+      }
+    }
+
+    // Se depth >= 2, busca conexões de 2º grau
+    if (depth >= 2) {
+      // Busca outros usuários que têm conexões com os mesmos contatos
+      const contactIds = Array.from(visitedContacts);
+
+      if (contactIds.length > 0) {
+        // Busca conexões de outros usuários com os mesmos contatos
+        const secondDegreeData = await this.prisma.connection.findMany({
+          where: {
+            contactId: { in: contactIds },
+            fromUserId: { not: userId },
+          },
+          include: {
+            fromUser: true,
+            contact: {
+              include: {
+                tags: {
+                  include: {
+                    tag: true,
+                  },
+                },
+              },
+            },
+          },
+        });
+
+        // Mapeia contatos de 2º grau (contatos dos contatos do usuário)
+        const secondaryUserIds = new Set<string>();
+
+        for (const conn of secondDegreeData) {
+          if (!secondaryUserIds.has(conn.fromUserId)) {
+            secondaryUserIds.add(conn.fromUserId);
+
+            // Busca os contatos desse usuário secundário
+            const theirConnections = await this.prisma.connection.findMany({
+              where: {
+                fromUserId: conn.fromUserId,
+                contactId: { notIn: contactIds },
+              },
+              include: {
+                contact: {
+                  include: {
+                    tags: {
+                      include: {
+                        tag: true,
+                      },
+                    },
+                  },
+                },
+              },
+              take: 10, // Limita para não sobrecarregar o grafo
+            });
+
+            for (const theirConn of theirConnections) {
+              if (!visitedContacts.has(theirConn.contactId)) {
+                visitedContacts.add(theirConn.contactId);
+
+                nodes.push({
+                  id: theirConn.contactId,
+                  name: theirConn.contact.name,
+                  type: 'contact',
+                  degree: 2,
+                  tags: theirConn.contact.tags.map((ct) => ({
+                    id: ct.tag.id,
+                    name: ct.tag.name,
+                    color: ct.tag.color,
+                  })),
+                  company: theirConn.contact.company,
+                  position: theirConn.contact.position,
+                });
+
+                // A aresta conecta através do contato em comum
+                const commonContactId = contactIds.find((cid) =>
+                  secondDegreeData.some(
+                    (sd) => sd.fromUserId === conn.fromUserId && sd.contactId === cid,
+                  ),
+                );
+
+                if (commonContactId) {
+                  edges.push({
+                    source: commonContactId,
+                    target: theirConn.contactId,
+                    strength: theirConn.strength,
+                  });
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return { nodes, edges };
+  }
+
+  async getSecondDegreeContacts(userId: string, search?: string) {
+    // Busca contatos de 1º grau
+    const firstDegreeContacts = await this.prisma.connection.findMany({
+      where: { fromUserId: userId },
+      select: { contactId: true },
+    });
+
+    const firstDegreeIds = firstDegreeContacts.map((c) => c.contactId);
+
+    if (firstDegreeIds.length === 0) {
+      return [];
+    }
+
+    // Busca usuários que têm conexões com os mesmos contatos
+    const sharedConnections = await this.prisma.connection.findMany({
+      where: {
+        contactId: { in: firstDegreeIds },
+        fromUserId: { not: userId },
+      },
+      select: { fromUserId: true, contactId: true },
+    });
+
+    const connectedUserIds = [...new Set(sharedConnections.map((c) => c.fromUserId))];
+
+    if (connectedUserIds.length === 0) {
+      return [];
+    }
+
+    // Busca contatos de 2º grau (contatos dos usuários conectados que não são do usuário)
+    const myContactIds = await this.prisma.contact.findMany({
+      where: { ownerId: userId },
+      select: { id: true },
+    });
+
+    const myIds = myContactIds.map((c) => c.id);
+
+    const searchCondition = search
+      ? {
+          OR: [
+            { name: { contains: search, mode: 'insensitive' as const } },
+            { company: { contains: search, mode: 'insensitive' as const } },
+            { notes: { contains: search, mode: 'insensitive' as const } },
+          ],
+        }
+      : {};
+
+    return this.prisma.contact.findMany({
+      where: {
+        ownerId: { in: connectedUserIds },
+        id: { notIn: [...firstDegreeIds, ...myIds] },
+        ...searchCondition,
+      },
+      include: {
+        tags: {
+          include: {
+            tag: true,
+          },
+        },
+        owner: {
+          select: {
+            id: true,
+            name: true,
+          },
+        },
+      },
+      take: 50,
+    });
+  }
+}

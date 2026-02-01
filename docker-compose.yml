@@ -1,0 +1,79 @@
+services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: netloop-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: netloop
+      POSTGRES_PASSWORD: netloop123
+      POSTGRES_DB: netloop
+    ports:
+      - "5433:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U netloop -d netloop"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: netloop-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: development
+    container_name: netloop-backend
+    restart: unless-stopped
+    ports:
+      - "3333:3333"
+    environment:
+      DATABASE_URL: postgresql://netloop:netloop123@postgres:5432/netloop?schema=public
+      NODE_ENV: development
+      PORT: 3333
+      JWT_SECRET: "netloop-jwt-secret-change-in-production-2024"
+      JWT_EXPIRES_IN: "15m"
+      JWT_REFRESH_SECRET: "netloop-refresh-secret-change-in-production-2024"
+      JWT_REFRESH_EXPIRES_IN: "7d"
+      CORS_ORIGIN: "http://localhost:3002"
+      SETTINGS_ENCRYPTION_KEY: "netloop-settings-key-32chars-ok"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src
+      - ./backend/prisma:/app/prisma
+    command: npm run start:dev
+
+  admin:
+    build:
+      context: ./admin
+      dockerfile: Dockerfile.dev
+    container_name: netloop-admin
+    restart: unless-stopped
+    ports:
+      - "3002:3002"
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3333
+    volumes:
+      - ./admin/src:/app/src
+      - ./admin/public:/app/public
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  redis_data:

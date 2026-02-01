@@ -1,0 +1,261 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// ENUMS
+// ============================================
+
+enum UserRole {
+  ADMIN
+  USER
+}
+
+enum TagType {
+  FREE           // Tags livres criadas por qualquer usuário
+  INSTITUTIONAL  // Tags de grupos/instituições (ex: SOMA)
+}
+
+enum ConnectionStrength {
+  WEAK      // Conhece superficialmente
+  MODERATE  // Conhece bem
+  STRONG    // Relacionamento próximo
+}
+
+enum MessageType {
+  TEXT
+  AUDIO
+  IMAGE
+}
+
+enum SettingCategory {
+  AI          // Configurações de IA (OpenAI, Anthropic)
+  WHATSAPP    // Configurações de WhatsApp/Evolution
+  SYSTEM      // Configurações gerais do sistema
+}
+
+// ============================================
+// USER - Usuário do sistema
+// ============================================
+
+model User {
+  id           String    @id @default(uuid())
+  email        String    @unique
+  password     String
+  name         String
+  phone        String?   @unique
+  role         UserRole  @default(USER)
+  isActive     Boolean   @default(true)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  // Relacionamentos
+  contacts           Contact[]
+  createdTags        Tag[]              @relation("TagCreator")
+  groupMemberships   GroupMember[]
+  refreshTokens      RefreshToken[]
+  sentConnections    Connection[]       @relation("ConnectionFrom")
+  receivedMessages   WhatsappMessage[]
+  updatedSettings    SystemSetting[]    @relation("SettingUpdater")
+
+  @@map("users")
+}
+
+// ============================================
+// REFRESH TOKEN - Para JWT refresh
+// ============================================
+
+model RefreshToken {
+  id        String   @id @default(uuid())
+  token     String   @unique
+  userId    String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("refresh_tokens")
+}
+
+// ============================================
+// CONTACT - Contatos criados pelos usuários
+// ============================================
+
+model Contact {
+  id          String   @id @default(uuid())
+  ownerId     String
+  name        String
+  phone       String?
+  email       String?
+  company     String?
+  position    String?
+  location    String?
+  notes       String?  @db.Text
+  context     String?  @db.Text  // Contexto extraído pela IA
+  rawTranscription String? @db.Text // Transcrição original do áudio
+  embedding   Unsupported("vector(1536)")? // Embedding para busca semântica
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relacionamentos
+  owner       User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tags        ContactTag[]
+  connections Connection[]
+
+  @@index([ownerId])
+  @@map("contacts")
+}
+
+// ============================================
+// TAG - Sistema de tags
+// ============================================
+
+model Tag {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String
+  type        TagType  @default(FREE)
+  color       String?  @default("#6366f1")
+  groupId     String?  // Se for tag institucional, pertence a um grupo
+  createdById String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relacionamentos
+  createdBy   User         @relation("TagCreator", fields: [createdById], references: [id])
+  group       Group?       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  contacts    ContactTag[]
+
+  @@unique([slug, groupId])
+  @@index([type])
+  @@map("tags")
+}
+
+// ============================================
+// CONTACT_TAG - Relação N:N entre Contact e Tag
+// ============================================
+
+model ContactTag {
+  id        String   @id @default(uuid())
+  contactId String
+  tagId     String
+  createdAt DateTime @default(now())
+
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  tag     Tag     @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@unique([contactId, tagId])
+  @@map("contact_tags")
+}
+
+// ============================================
+// GROUP - Grupos/Instituições (ex: SOMA)
+// ============================================
+
+model Group {
+  id          String   @id @default(uuid())
+  name        String   @unique
+  slug        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relacionamentos
+  members GroupMember[]
+  tags    Tag[]
+
+  @@map("groups")
+}
+
+// ============================================
+// GROUP_MEMBER - Membros de grupos
+// ============================================
+
+model GroupMember {
+  id        String   @id @default(uuid())
+  userId    String
+  groupId   String
+  isAdmin   Boolean  @default(false)
+  joinedAt  DateTime @default(now())
+  leftAt    DateTime?
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, groupId])
+  @@map("group_members")
+}
+
+// ============================================
+// CONNECTION - Conexões entre contatos (grafo)
+// ============================================
+
+model Connection {
+  id          String             @id @default(uuid())
+  fromUserId  String             // Usuário que criou a conexão
+  contactId   String             // Contato conectado
+  strength    ConnectionStrength @default(MODERATE)
+  context     String?            @db.Text  // Como se conheceram
+  createdAt   DateTime           @default(now())
+  updatedAt   DateTime           @updatedAt
+
+  fromUser User    @relation("ConnectionFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
+  contact  Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@unique([fromUserId, contactId])
+  @@index([fromUserId])
+  @@index([contactId])
+  @@map("connections")
+}
+
+// ============================================
+// WHATSAPP_MESSAGE - Mensagens recebidas
+// ============================================
+
+model WhatsappMessage {
+  id             String      @id @default(uuid())
+  userId         String
+  externalId     String      @unique  // ID da mensagem no WhatsApp
+  fromPhone      String
+  type           MessageType
+  content        String?     @db.Text
+  audioUrl       String?
+  transcription  String?     @db.Text
+  extractedData  Json?       // Dados extraídos pela IA (nome, empresa, etc)
+  processed      Boolean     @default(false)
+  processedAt    DateTime?
+  createdAt      DateTime    @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([processed])
+  @@map("whatsapp_messages")
+}
+
+// ============================================
+// SYSTEM_SETTING - Configurações globais do sistema
+// ============================================
+
+model SystemSetting {
+  id          String          @id @default(uuid())
+  key         String          @unique
+  value       String          @db.Text
+  category    SettingCategory @default(SYSTEM)
+  isEncrypted Boolean         @default(false)
+  description String?
+  updatedById String?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  updatedBy   User?           @relation("SettingUpdater", fields: [updatedById], references: [id])
+
+  @@index([category])
+  @@map("system_settings")
+}
