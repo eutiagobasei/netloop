@@ -145,9 +145,22 @@ export class SettingsService {
 
       if (response.ok) {
         const data = await response.json();
+
+        // Lista todas as instâncias disponíveis
+        const availableInstances = Array.isArray(data)
+          ? data.map((i: { instance?: { instanceName?: string } }) => i?.instance?.instanceName).filter(Boolean)
+          : [];
+
+        if (availableInstances.length === 0) {
+          return {
+            success: false,
+            message: 'Nenhuma instância encontrada na Evolution API. Crie uma instância primeiro.',
+          };
+        }
+
         const instance = instanceName
           ? data.find((i: { instance: { instanceName: string } }) =>
-              i.instance.instanceName === instanceName)
+              i.instance?.instanceName?.toLowerCase() === instanceName.toLowerCase())
           : data[0];
 
         if (instance) {
@@ -159,7 +172,7 @@ export class SettingsService {
 
         return {
           success: false,
-          message: 'Nenhuma instância encontrada',
+          message: `Instância "${instanceName}" não encontrada. Instâncias disponíveis: ${availableInstances.join(', ')}`,
         };
       }
 
