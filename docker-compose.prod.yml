@@ -40,6 +40,7 @@ services:
       context: ./backend
       dockerfile: Dockerfile
       target: production
+    image: netloop-prod-backend:latest
     container_name: netloop-prod-backend
     restart: always
     ports:
@@ -66,6 +67,7 @@ services:
       dockerfile: Dockerfile
       args:
         NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    image: netloop-prod-admin:latest
     container_name: netloop-prod-admin
     restart: always
     ports:
