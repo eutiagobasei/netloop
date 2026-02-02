@@ -316,6 +316,18 @@ export class WhatsappService {
       });
 
       this.logger.log(`Contato criado automaticamente: ${contact.name} (ID: ${contact.id})`);
+
+      // Cria a conexão automaticamente
+      await this.prisma.connection.create({
+        data: {
+          fromUserId: userId,
+          contactId: contact.id,
+          strength: 'MODERATE',
+          context: extractedData.context || transcription,
+        },
+      });
+
+      this.logger.log(`Conexão criada automaticamente para: ${contact.name}`);
     } catch (error) {
       this.logger.error('Erro ao criar contato automaticamente:', error);
     }
