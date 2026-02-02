@@ -146,9 +146,11 @@ export class SettingsService {
       if (response.ok) {
         const data = await response.json();
 
-        // Lista todas as instâncias disponíveis
+        // Lista todas as instâncias disponíveis (suporta ambos formatos de resposta)
         const availableInstances = Array.isArray(data)
-          ? data.map((i: { instance?: { instanceName?: string } }) => i?.instance?.instanceName).filter(Boolean)
+          ? data.map((i: { name?: string; instance?: { instanceName?: string } }) =>
+              i?.name || i?.instance?.instanceName
+            ).filter(Boolean)
           : [];
 
         if (availableInstances.length === 0) {
@@ -159,14 +161,16 @@ export class SettingsService {
         }
 
         const instance = instanceName
-          ? data.find((i: { instance: { instanceName: string } }) =>
-              i.instance?.instanceName?.toLowerCase() === instanceName.toLowerCase())
+          ? data.find((i: { name?: string; instance?: { instanceName?: string } }) =>
+              (i.name?.toLowerCase() === instanceName.toLowerCase()) ||
+              (i.instance?.instanceName?.toLowerCase() === instanceName.toLowerCase()))
           : data[0];
 
         if (instance) {
+          const foundName = instance.name || instance.instance?.instanceName;
           return {
             success: true,
-            message: `Conectado com sucesso. Instância: ${instance.instance.instanceName}`,
+            message: `Conectado com sucesso. Instância: ${foundName}`,
           };
         }
 
