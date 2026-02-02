@@ -4,7 +4,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { MessageType, Prisma } from '@prisma/client';
 import { ContactsService } from '../contacts/contacts.service';
 import { AIService } from '../ai/ai.service';
-import { WebhookPayloadDto } from './dto/webhook-payload.dto';
+import { EvolutionWebhookDto } from './dto/evolution-webhook.dto';
 
 @Injectable()
 export class WhatsappService {
@@ -18,48 +18,90 @@ export class WhatsappService {
     private readonly aiService: AIService,
   ) {}
 
-  async handleWebhook(payload: WebhookPayloadDto) {
-    this.logger.log(`Webhook recebido: ${JSON.stringify(payload)}`);
+  async handleEvolutionWebhook(payload: any) {
+    this.logger.log(`Webhook Evolution recebido: event=${payload?.event}`);
+
+    // Só processa eventos de mensagens recebidas
+    if (payload?.event !== 'messages.upsert') {
+      this.logger.log(`Evento ignorado: ${payload?.event}`);
+      return { status: 'ignored', reason: 'not a message event' };
+    }
+
+    const data = payload.data;
+    if (!data || !data.key) {
+      this.logger.warn('Payload inválido - sem data ou key');
+      return { status: 'error', reason: 'invalid payload' };
+    }
+
+    // Ignora mensagens enviadas por nós
+    if (data.key.fromMe) {
+      this.logger.log('Mensagem ignorada - enviada por nós');
+      return { status: 'ignored', reason: 'fromMe' };
+    }
+
+    const messageId = data.key.id;
+    const remoteJid = data.key.remoteJid;
 
     // Verifica se já processamos essa mensagem
     const existing = await this.prisma.whatsappMessage.findUnique({
-      where: { externalId: payload.messageId },
+      where: { externalId: messageId },
     });
 
     if (existing) {
-      this.logger.log(`Mensagem ${payload.messageId} já processada`);
+      this.logger.log(`Mensagem ${messageId} já processada`);
       return { status: 'already_processed' };
     }
 
-    // Encontra o usuário pelo telefone
-    const user = await this.prisma.user.findUnique({
-      where: { phone: payload.toPhone },
-    });
+    // Extrai o número de telefone do remoteJid (formato: 5511999999999@s.whatsapp.net)
+    const fromPhone = remoteJid?.split('@')[0] || '';
+    const pushName = data.pushName || '';
 
-    if (!user) {
-      this.logger.warn(`Usuário não encontrado para o telefone: ${payload.toPhone}`);
-      throw new NotFoundException('Usuário não encontrado para este número');
+    // Extrai o conteúdo da mensagem
+    let content: string | undefined;
+    let audioUrl: string | undefined;
+    let messageType: MessageType = MessageType.TEXT;
+
+    if (data.message?.conversation) {
+      content = data.message.conversation;
+    } else if (data.message?.extendedTextMessage?.text) {
+      content = data.message.extendedTextMessage.text;
+    } else if (data.message?.audioMessage) {
+      messageType = MessageType.AUDIO;
+      audioUrl = data.message.audioMessage.url;
+    } else if (data.message?.imageMessage) {
+      messageType = MessageType.IMAGE;
+      content = data.message.imageMessage.caption;
     }
 
-    // Determina o tipo da mensagem
-    let messageType: MessageType = MessageType.TEXT;
-    if (payload.audioUrl) {
-      messageType = MessageType.AUDIO;
-    } else if (payload.imageUrl) {
-      messageType = MessageType.IMAGE;
+    if (!content && messageType === MessageType.TEXT) {
+      this.logger.warn('Mensagem sem conteúdo de texto');
+      return { status: 'ignored', reason: 'no content' };
+    }
+
+    // Busca o primeiro admin do sistema para associar a mensagem
+    const admin = await this.prisma.user.findFirst({
+      where: { role: 'ADMIN' },
+      orderBy: { createdAt: 'asc' },
+    });
+
+    if (!admin) {
+      this.logger.error('Nenhum admin encontrado no sistema');
+      return { status: 'error', reason: 'no admin user' };
     }
 
     // Salva a mensagem
     const message = await this.prisma.whatsappMessage.create({
       data: {
-        userId: user.id,
-        externalId: payload.messageId,
-        fromPhone: payload.fromPhone,
+        userId: admin.id,
+        externalId: messageId,
+        fromPhone: fromPhone,
         type: messageType,
-        content: payload.content,
-        audioUrl: payload.audioUrl,
+        content: pushName ? `[${pushName}] ${content}` : content,
+        audioUrl: audioUrl,
       },
     });
+
+    this.logger.log(`Mensagem salva: ${message.id} de ${fromPhone}`);
 
     // Processa com IA de forma assíncrona
     this.processMessageWithAI(message.id, messageType);
