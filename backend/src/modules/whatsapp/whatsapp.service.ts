@@ -42,6 +42,13 @@ export class WhatsappService {
       return { status: 'error', reason: 'invalid payload' };
     }
 
+    // LOG: Debug payload completo
+    this.logger.log(`Payload data.key: ${JSON.stringify(data.key)}`);
+    this.logger.log(`Payload data.pushName: ${data.pushName}`);
+    if (data.key.participant) {
+      this.logger.log(`Participant: ${data.key.participant}`);
+    }
+
     // Ignora mensagens enviadas por nós
     if (data.key.fromMe) {
       this.logger.log('Mensagem ignorada - enviada por nós');
@@ -61,8 +68,19 @@ export class WhatsappService {
       return { status: 'already_processed' };
     }
 
-    // Extrai o número de telefone do remoteJid (formato: 5511999999999@s.whatsapp.net)
-    const fromPhone = remoteJid?.split('@')[0] || '';
+    // Extrai o número de telefone
+    // Em grupos, o remoteJid é o ID do grupo e participant é o número do remetente
+    // Em conversas privadas, remoteJid é o número do remetente
+    let fromPhone = '';
+    if (data.key.participant) {
+      // Mensagem de grupo - usa participant como remetente
+      fromPhone = data.key.participant.split('@')[0] || '';
+    } else {
+      // Mensagem privada - usa remoteJid como remetente
+      fromPhone = remoteJid?.split('@')[0] || '';
+    }
+
+    this.logger.log(`Número extraído: ${fromPhone}, remoteJid: ${remoteJid}`);
     const pushName = data.pushName || '';
 
     // Extrai o conteúdo da mensagem
