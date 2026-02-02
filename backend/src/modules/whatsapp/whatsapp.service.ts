@@ -1,10 +1,13 @@
 import { Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
-import { MessageType, Prisma } from '@prisma/client';
+import { MessageType, Prisma, ApprovalStatus } from '@prisma/client';
 import { ContactsService } from '../contacts/contacts.service';
 import { AIService } from '../ai/ai.service';
-import { EvolutionWebhookDto } from './dto/evolution-webhook.dto';
+import { EvolutionService } from './evolution.service';
+
+// Timeout para auto-aprovar (2 minutos)
+const AUTO_APPROVE_TIMEOUT_MS = 2 * 60 * 1000;
 
 @Injectable()
 export class WhatsappService {
@@ -16,6 +19,7 @@ export class WhatsappService {
     private readonly contactsService: ContactsService,
     @Inject(forwardRef(() => AIService))
     private readonly aiService: AIService,
+    private readonly evolutionService: EvolutionService,
   ) {}
 
   async handleEvolutionWebhook(payload: any) {
@@ -73,11 +77,6 @@ export class WhatsappService {
       content = data.message.imageMessage.caption;
     }
 
-    if (!content && messageType === MessageType.TEXT) {
-      this.logger.warn('Mensagem sem conteúdo de texto');
-      return { status: 'ignored', reason: 'no content' };
-    }
-
     // Busca o primeiro admin do sistema para associar a mensagem
     const admin = await this.prisma.user.findFirst({
       where: { role: 'ADMIN' },
@@ -89,6 +88,18 @@ export class WhatsappService {
       return { status: 'error', reason: 'no admin user' };
     }
 
+    // Verifica se é uma resposta de aprovação
+    const pendingMessage = await this.findPendingApproval(admin.id, fromPhone);
+    if (pendingMessage && content) {
+      return this.handleApprovalResponse(pendingMessage, content.toLowerCase().trim());
+    }
+
+    // Se não tem conteúdo e é texto, ignora
+    if (!content && messageType === MessageType.TEXT) {
+      this.logger.warn('Mensagem sem conteúdo de texto');
+      return { status: 'ignored', reason: 'no content' };
+    }
+
     // Salva a mensagem
     const message = await this.prisma.whatsappMessage.create({
       data: {
@@ -98,13 +109,14 @@ export class WhatsappService {
         type: messageType,
         content: pushName ? `[${pushName}] ${content}` : content,
         audioUrl: audioUrl,
+        approvalStatus: 'PENDING',
       },
     });
 
     this.logger.log(`Mensagem salva: ${message.id} de ${fromPhone}`);
 
     // Processa com IA de forma assíncrona
-    this.processMessageWithAI(message.id, messageType);
+    this.processMessageWithAI(message.id, messageType, fromPhone);
 
     return {
       status: 'received',
@@ -112,7 +124,128 @@ export class WhatsappService {
     };
   }
 
-  async processMessageWithAI(messageId: string, type: MessageType) {
+  private async findPendingApproval(userId: string, fromPhone: string) {
+    return this.prisma.whatsappMessage.findFirst({
+      where: {
+        userId,
+        fromPhone,
+        approvalStatus: 'AWAITING',
+        contactCreated: false,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  private async handleApprovalResponse(message: any, response: string) {
+    this.logger.log(`Resposta de aprovação recebida: "${response}" para mensagem ${message.id}`);
+
+    // Respostas de rejeição
+    const rejectResponses = ['não', 'nao', 'n', 'cancelar', 'cancel', 'rejeitar', 'descartar'];
+
+    // Respostas de aprovação
+    const approveResponses = ['sim', 's', 'ok', 'yes', 'y', 'salvar', 'aprovar', 'confirmar', '1'];
+
+    if (rejectResponses.includes(response)) {
+      await this.prisma.whatsappMessage.update({
+        where: { id: message.id },
+        data: {
+          approvalStatus: 'REJECTED',
+          approvedAt: new Date(),
+        },
+      });
+
+      await this.evolutionService.sendTextMessage(
+        message.fromPhone,
+        '❌ Contato descartado. Envie uma nova mensagem quando quiser adicionar outro contato.'
+      );
+
+      return { status: 'rejected' };
+    }
+
+    // Qualquer outra resposta (inclusive silêncio tratado pelo timeout) é aprovação
+    if (approveResponses.includes(response) || response === 'auto') {
+      return this.approveAndCreateContact(message, response === 'auto' ? 'AUTO_APPROVED' : 'APPROVED');
+    }
+
+    // Se for uma correção (contém algum dado novo), atualiza os dados extraídos
+    if (response.length > 10) {
+      // Tenta interpretar a resposta como correção usando IA
+      return this.handleCorrectionResponse(message, response);
+    }
+
+    // Resposta não reconhecida - trata como aprovação
+    return this.approveAndCreateContact(message, 'APPROVED');
+  }
+
+  private async handleCorrectionResponse(message: any, correction: string) {
+    try {
+      const extraction = await this.aiService.extractContactData(correction);
+
+      if (extraction.success && extraction.data) {
+        // Mescla os dados originais com as correções
+        const originalData = message.extractedData || {};
+        const correctedData = {
+          ...originalData,
+          ...Object.fromEntries(
+            Object.entries(extraction.data).filter(([_, v]) => v !== null && v !== undefined)
+          ),
+        };
+
+        await this.prisma.whatsappMessage.update({
+          where: { id: message.id },
+          data: { extractedData: correctedData },
+        });
+
+        // Envia novo resumo para aprovação
+        await this.sendApprovalRequest(message.id, message.fromPhone, correctedData);
+
+        return { status: 'correction_applied' };
+      }
+    } catch (error) {
+      this.logger.error('Erro ao processar correção:', error);
+    }
+
+    // Se não conseguiu interpretar, aprova com dados originais
+    return this.approveAndCreateContact(message, 'APPROVED');
+  }
+
+  private async approveAndCreateContact(message: any, status: 'APPROVED' | 'AUTO_APPROVED') {
+    const extractedData = message.extractedData;
+
+    if (!extractedData?.name) {
+      this.logger.warn('Não há dados suficientes para criar contato');
+      return { status: 'no_data' };
+    }
+
+    try {
+      // Cria o contato e a conexão
+      await this.createContactAndConnection(message.userId, extractedData, message.transcription || message.content);
+
+      // Atualiza o status da mensagem
+      await this.prisma.whatsappMessage.update({
+        where: { id: message.id },
+        data: {
+          approvalStatus: status,
+          approvedAt: new Date(),
+          contactCreated: true,
+        },
+      });
+
+      // Envia confirmação
+      const confirmMessage = status === 'AUTO_APPROVED'
+        ? `✅ Contato *${extractedData.name}* salvo automaticamente na sua rede!`
+        : `✅ Contato *${extractedData.name}* salvo na sua rede!`;
+
+      await this.evolutionService.sendTextMessage(message.fromPhone, confirmMessage);
+
+      return { status: 'approved', contactName: extractedData.name };
+    } catch (error) {
+      this.logger.error('Erro ao criar contato:', error);
+      return { status: 'error' };
+    }
+  }
+
+  async processMessageWithAI(messageId: string, type: MessageType, fromPhone: string) {
     this.logger.log(`Processando mensagem ${messageId} com IA`);
 
     const message = await this.prisma.whatsappMessage.findUnique({
@@ -148,11 +281,6 @@ export class WhatsappService {
         const extraction = await this.aiService.extractContactData(transcription);
         if (extraction.success) {
           extractedData = extraction.data;
-
-          // Cria contato automaticamente se tiver nome
-          if (extractedData?.name) {
-            await this.createContactAutomatically(message.userId, extractedData, transcription);
-          }
         }
       }
 
@@ -167,11 +295,18 @@ export class WhatsappService {
         },
       });
 
+      // Se extraiu dados de contato, envia para aprovação
+      if (extractedData?.name) {
+        await this.sendApprovalRequest(messageId, fromPhone, extractedData);
+
+        // Agenda auto-aprovação
+        this.scheduleAutoApproval(messageId, fromPhone);
+      }
+
       this.logger.log(`Mensagem ${messageId} processada com sucesso`);
     } catch (error) {
       this.logger.error(`Erro ao processar mensagem ${messageId}:`, error);
 
-      // Marca como processado mesmo com erro para não reprocessar
       await this.prisma.whatsappMessage.update({
         where: { id: messageId },
         data: {
@@ -182,10 +317,169 @@ export class WhatsappService {
     }
   }
 
+  private async sendApprovalRequest(messageId: string, toPhone: string, extractedData: any) {
+    // Cria ou busca as tags sugeridas
+    const tagNames = extractedData.tags || [];
+
+    // Formata o resumo
+    const summary = this.formatContactSummary(extractedData, tagNames);
+
+    // Envia a mensagem de aprovação
+    const sent = await this.evolutionService.sendTextMessage(toPhone, summary);
+
+    if (sent) {
+      await this.prisma.whatsappMessage.update({
+        where: { id: messageId },
+        data: {
+          approvalStatus: 'AWAITING',
+          approvalSentAt: new Date(),
+        },
+      });
+    }
+  }
+
+  private formatContactSummary(data: any, tags: string[]): string {
+    let summary = `📋 *Novo Contato Identificado*\n\n`;
+    summary += `👤 *Nome:* ${data.name}\n`;
+
+    if (data.phone) summary += `📱 *Telefone:* ${data.phone}\n`;
+    if (data.email) summary += `📧 *Email:* ${data.email}\n`;
+    if (data.company) summary += `🏢 *Empresa:* ${data.company}\n`;
+    if (data.position) summary += `💼 *Cargo:* ${data.position}\n`;
+    if (data.location) summary += `📍 *Local:* ${data.location}\n`;
+    if (data.context) summary += `\n💬 *Contexto:* ${data.context}\n`;
+
+    if (tags.length > 0) {
+      summary += `\n🏷️ *Tags:* ${tags.join(', ')}\n`;
+    }
+
+    summary += `\n─────────────────\n`;
+    summary += `✅ Responda *OK* para salvar\n`;
+    summary += `❌ Responda *NÃO* para descartar\n`;
+    summary += `✏️ Ou envie correções\n\n`;
+    summary += `⏰ _Será salvo automaticamente em 2 min_`;
+
+    return summary;
+  }
+
+  private scheduleAutoApproval(messageId: string, fromPhone: string) {
+    setTimeout(async () => {
+      const message = await this.prisma.whatsappMessage.findUnique({
+        where: { id: messageId },
+      });
+
+      // Só auto-aprova se ainda estiver aguardando
+      if (message && message.approvalStatus === 'AWAITING' && !message.contactCreated) {
+        this.logger.log(`Auto-aprovando mensagem ${messageId}`);
+        await this.handleApprovalResponse(message, 'auto');
+      }
+    }, AUTO_APPROVE_TIMEOUT_MS);
+  }
+
+  private async createContactAndConnection(
+    userId: string,
+    extractedData: any,
+    transcription: string,
+  ) {
+    // Verifica se já existe contato com mesmo nome
+    if (extractedData.name) {
+      const existingByName = await this.prisma.contact.findFirst({
+        where: { ownerId: userId, name: extractedData.name },
+      });
+
+      if (existingByName) {
+        this.logger.log(`Contato já existe com nome: ${extractedData.name}`);
+        return existingByName;
+      }
+    }
+
+    // Verifica se já existe contato com mesmo telefone
+    if (extractedData.phone) {
+      const existingByPhone = await this.prisma.contact.findFirst({
+        where: { ownerId: userId, phone: extractedData.phone },
+      });
+
+      if (existingByPhone) {
+        this.logger.log(`Contato já existe com telefone: ${extractedData.phone}`);
+        return existingByPhone;
+      }
+    }
+
+    // Cria o contato
+    const contact = await this.contactsService.create(userId, {
+      name: extractedData.name,
+      phone: extractedData.phone || undefined,
+      email: extractedData.email || undefined,
+      company: extractedData.company || undefined,
+      position: extractedData.position || undefined,
+      location: extractedData.location || undefined,
+      notes: extractedData.context || undefined,
+      context: transcription,
+      rawTranscription: transcription,
+    });
+
+    this.logger.log(`Contato criado: ${contact.name} (ID: ${contact.id})`);
+
+    // Cria a conexão automaticamente
+    await this.prisma.connection.create({
+      data: {
+        fromUserId: userId,
+        contactId: contact.id,
+        strength: 'MODERATE',
+        context: extractedData.context || transcription,
+      },
+    });
+
+    this.logger.log(`Conexão criada para: ${contact.name}`);
+
+    // Cria as tags se existirem
+    if (extractedData.tags && Array.isArray(extractedData.tags)) {
+      await this.createAndAssignTags(userId, contact.id, extractedData.tags);
+    }
+
+    return contact;
+  }
+
+  private async createAndAssignTags(userId: string, contactId: string, tagNames: string[]) {
+    for (const tagName of tagNames) {
+      try {
+        const slug = tagName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+
+        // Busca ou cria a tag
+        let tag = await this.prisma.tag.findFirst({
+          where: { slug, createdById: userId },
+        });
+
+        if (!tag) {
+          tag = await this.prisma.tag.create({
+            data: {
+              name: tagName,
+              slug,
+              type: 'FREE',
+              createdById: userId,
+            },
+          });
+          this.logger.log(`Tag criada: ${tagName}`);
+        }
+
+        // Associa a tag ao contato
+        await this.prisma.contactTag.create({
+          data: {
+            contactId,
+            tagId: tag.id,
+          },
+        }).catch(() => {
+          // Ignora se já existir a associação
+        });
+      } catch (error) {
+        this.logger.error(`Erro ao criar tag ${tagName}:`, error);
+      }
+    }
+  }
+
   async reprocessMessage(messageId: string, userId: string) {
     const message = await this.getMessage(messageId, userId);
 
-    // Reseta o status de processamento
     await this.prisma.whatsappMessage.update({
       where: { id: messageId },
       data: {
@@ -193,11 +487,14 @@ export class WhatsappService {
         processedAt: null,
         transcription: null,
         extractedData: Prisma.DbNull,
+        approvalStatus: 'PENDING',
+        approvalSentAt: null,
+        approvedAt: null,
+        contactCreated: false,
       },
     });
 
-    // Reprocessa
-    await this.processMessageWithAI(messageId, message.type);
+    await this.processMessageWithAI(messageId, message.type, message.fromPhone);
 
     return this.getMessage(messageId, userId);
   }
@@ -250,7 +547,6 @@ export class WhatsappService {
   }) {
     const message = await this.getMessage(messageId, userId);
 
-    // Cria o contato usando o serviço de contatos
     const contact = await this.contactsService.create(userId, {
       ...contactData,
       context: message.transcription || message.content || undefined,
@@ -268,68 +564,6 @@ export class WhatsappService {
       return true;
     }
 
-    // TODO: Implementar verificação de assinatura específica do provider (Evolution, etc)
     return true;
-  }
-
-  private async createContactAutomatically(
-    userId: string,
-    extractedData: any,
-    transcription: string,
-  ) {
-    try {
-      // Verifica se já existe contato com mesmo nome
-      if (extractedData.name) {
-        const existingByName = await this.prisma.contact.findFirst({
-          where: { ownerId: userId, name: extractedData.name },
-        });
-
-        if (existingByName) {
-          this.logger.log(`Contato já existe com nome: ${extractedData.name}`);
-          return;
-        }
-      }
-
-      // Verifica se já existe contato com mesmo telefone
-      if (extractedData.phone) {
-        const existingByPhone = await this.prisma.contact.findFirst({
-          where: { ownerId: userId, phone: extractedData.phone },
-        });
-
-        if (existingByPhone) {
-          this.logger.log(`Contato já existe com telefone: ${extractedData.phone}`);
-          return;
-        }
-      }
-
-      // Cria o contato
-      const contact = await this.contactsService.create(userId, {
-        name: extractedData.name,
-        phone: extractedData.phone || undefined,
-        email: extractedData.email || undefined,
-        company: extractedData.company || undefined,
-        position: extractedData.position || undefined,
-        location: extractedData.location || undefined,
-        notes: extractedData.context || undefined,
-        context: transcription,
-        rawTranscription: transcription,
-      });
-
-      this.logger.log(`Contato criado automaticamente: ${contact.name} (ID: ${contact.id})`);
-
-      // Cria a conexão automaticamente
-      await this.prisma.connection.create({
-        data: {
-          fromUserId: userId,
-          contactId: contact.id,
-          strength: 'MODERATE',
-          context: extractedData.context || transcription,
-        },
-      });
-
-      this.logger.log(`Conexão criada automaticamente para: ${contact.name}`);
-    } catch (error) {
-      this.logger.error('Erro ao criar contato automaticamente:', error);
-    }
   }
 }

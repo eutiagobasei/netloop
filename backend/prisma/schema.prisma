@@ -33,6 +33,14 @@ enum MessageType {
   IMAGE
 }
 
+enum ApprovalStatus {
+  PENDING       // Aguardando processamento pela IA
+  AWAITING      // Aguardando aprovação do usuário
+  APPROVED      // Aprovado pelo usuário
+  REJECTED      // Rejeitado pelo usuário
+  AUTO_APPROVED // Auto-aprovado por timeout
+}
+
 enum SettingCategory {
   AI          // Configurações de IA (OpenAI, Anthropic)
   WHATSAPP    // Configurações de WhatsApp/Evolution
@@ -219,23 +227,28 @@ model Connection {
 // ============================================
 
 model WhatsappMessage {
-  id             String      @id @default(uuid())
-  userId         String
-  externalId     String      @unique  // ID da mensagem no WhatsApp
-  fromPhone      String
-  type           MessageType
-  content        String?     @db.Text
-  audioUrl       String?
-  transcription  String?     @db.Text
-  extractedData  Json?       // Dados extraídos pela IA (nome, empresa, etc)
-  processed      Boolean     @default(false)
-  processedAt    DateTime?
-  createdAt      DateTime    @default(now())
+  id              String         @id @default(uuid())
+  userId          String
+  externalId      String         @unique  // ID da mensagem no WhatsApp
+  fromPhone       String
+  type            MessageType
+  content         String?        @db.Text
+  audioUrl        String?
+  transcription   String?        @db.Text
+  extractedData   Json?          // Dados extraídos pela IA (nome, empresa, etc)
+  processed       Boolean        @default(false)
+  processedAt     DateTime?
+  approvalStatus  ApprovalStatus @default(PENDING)
+  approvalSentAt  DateTime?      // Quando o resumo foi enviado
+  approvedAt      DateTime?      // Quando foi aprovado/rejeitado
+  contactCreated  Boolean        @default(false)
+  createdAt       DateTime       @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
   @@index([processed])
+  @@index([approvalStatus])
   @@map("whatsapp_messages")
 }
 
