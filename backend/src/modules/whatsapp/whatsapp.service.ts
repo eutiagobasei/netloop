@@ -281,7 +281,7 @@ export class WhatsappService {
       // Verifica se já existe contato com mesmo nome
       if (extractedData.name) {
         const existingByName = await this.prisma.contact.findFirst({
-          where: { userId, name: extractedData.name },
+          where: { ownerId: userId, name: extractedData.name },
         });
 
         if (existingByName) {
@@ -293,7 +293,7 @@ export class WhatsappService {
       // Verifica se já existe contato com mesmo telefone
       if (extractedData.phone) {
         const existingByPhone = await this.prisma.contact.findFirst({
-          where: { userId, phone: extractedData.phone },
+          where: { ownerId: userId, phone: extractedData.phone },
         });
 
         if (existingByPhone) {
