@@ -13,6 +13,7 @@ import {
   ChevronDown,
   Shield,
   User,
+  UserPlus,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
@@ -23,6 +24,7 @@ const adminNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'API Keys', href: '/settings/api-keys', icon: Key },
   { name: 'Evolution API', href: '/settings/evolution', icon: MessageSquare },
+  { name: 'Boas-vindas', href: '/settings/welcome', icon: UserPlus },
 ]
 
 const userNavigation = [

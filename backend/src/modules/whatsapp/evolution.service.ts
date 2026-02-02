@@ -1,11 +1,40 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { SettingsService } from '../settings/settings.service';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class EvolutionService {
   private readonly logger = new Logger(EvolutionService.name);
 
   constructor(private readonly settingsService: SettingsService) {}
+
+  /**
+   * Busca credenciais da Evolution API
+   */
+  private async getCredentials() {
+    const apiUrl = await this.settingsService.getDecryptedValue('evolution_api_url');
+    const apiKey = await this.settingsService.getDecryptedValue('evolution_api_key');
+    const instanceName = await this.settingsService.getDecryptedValue('evolution_instance_name');
+    return { apiUrl, apiKey, instanceName };
+  }
+
+  /**
+   * Retorna o MIME type baseado na extensão do arquivo
+   */
+  private getMimeType(filePath: string): string {
+    const ext = path.extname(filePath).toLowerCase();
+    const mimeTypes: Record<string, string> = {
+      '.mp3': 'audio/mpeg',
+      '.ogg': 'audio/ogg',
+      '.wav': 'audio/wav',
+      '.mp4': 'video/mp4',
+      '.avi': 'video/x-msvideo',
+      '.webm': 'video/webm',
+      '.mov': 'video/quicktime',
+    };
+    return mimeTypes[ext] || 'application/octet-stream';
+  }
 
   async sendTextMessage(toPhone: string, message: string): Promise<boolean> {
     try {
@@ -57,5 +86,125 @@ export class EvolutionService {
     }
 
     return cleaned;
+  }
+
+  /**
+   * Envia mensagem de áudio
+   */
+  async sendAudioMessage(toPhone: string, audioPath: string): Promise<boolean> {
+    try {
+      const { apiUrl, apiKey, instanceName } = await this.getCredentials();
+      if (!apiUrl || !apiKey || !instanceName) {
+        this.logger.warn('Evolution API não configurada completamente');
+        return false;
+      }
+
+      const formattedNumber = this.formatPhoneNumber(toPhone);
+
+      let audioData: string;
+
+      if (audioPath.startsWith('http')) {
+        // URL externa - envia diretamente
+        audioData = audioPath;
+      } else {
+        // Arquivo local - converte para base64
+        const absolutePath = path.resolve(audioPath);
+        if (!fs.existsSync(absolutePath)) {
+          this.logger.error(`Arquivo de áudio não encontrado: ${absolutePath}`);
+          return false;
+        }
+        const fileBuffer = fs.readFileSync(absolutePath);
+        const base64 = fileBuffer.toString('base64');
+        const mimeType = this.getMimeType(absolutePath);
+        audioData = `data:${mimeType};base64,${base64}`;
+      }
+
+      const response = await fetch(`${apiUrl}/message/sendWhatsAppAudio/${instanceName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: apiKey,
+        },
+        body: JSON.stringify({
+          number: formattedNumber,
+          audio: audioData,
+        }),
+      });
+
+      if (response.ok) {
+        this.logger.log(`Áudio enviado para ${formattedNumber}`);
+        return true;
+      }
+
+      const error = await response.text();
+      this.logger.error(`Erro ao enviar áudio: ${response.status} - ${error}`);
+      return false;
+    } catch (error) {
+      this.logger.error('Erro ao enviar áudio:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Envia mensagem de vídeo
+   */
+  async sendVideoMessage(
+    toPhone: string,
+    videoPath: string,
+    caption?: string,
+  ): Promise<boolean> {
+    try {
+      const { apiUrl, apiKey, instanceName } = await this.getCredentials();
+      if (!apiUrl || !apiKey || !instanceName) {
+        this.logger.warn('Evolution API não configurada completamente');
+        return false;
+      }
+
+      const formattedNumber = this.formatPhoneNumber(toPhone);
+
+      let videoData: string;
+
+      if (videoPath.startsWith('http')) {
+        // URL externa - envia diretamente
+        videoData = videoPath;
+      } else {
+        // Arquivo local - converte para base64
+        const absolutePath = path.resolve(videoPath);
+        if (!fs.existsSync(absolutePath)) {
+          this.logger.error(`Arquivo de vídeo não encontrado: ${absolutePath}`);
+          return false;
+        }
+        const fileBuffer = fs.readFileSync(absolutePath);
+        const base64 = fileBuffer.toString('base64');
+        const mimeType = this.getMimeType(absolutePath);
+        videoData = `data:${mimeType};base64,${base64}`;
+      }
+
+      const response = await fetch(`${apiUrl}/message/sendMedia/${instanceName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: apiKey,
+        },
+        body: JSON.stringify({
+          number: formattedNumber,
+          mediatype: 'video',
+          media: videoData,
+          caption: caption || '',
+        }),
+      });
+
+      if (response.ok) {
+        this.logger.log(`Vídeo enviado para ${formattedNumber}`);
+        return true;
+      }
+
+      const error = await response.text();
+      this.logger.error(`Erro ao enviar vídeo: ${response.status} - ${error}`);
+      return false;
+    } catch (error) {
+      this.logger.error('Erro ao enviar vídeo:', error);
+      return false;
+    }
   }
 }

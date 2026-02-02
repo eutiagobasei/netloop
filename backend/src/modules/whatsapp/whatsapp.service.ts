@@ -5,6 +5,8 @@ import { MessageType, Prisma, ApprovalStatus } from '@prisma/client';
 import { ContactsService } from '../contacts/contacts.service';
 import { AIService } from '../ai/ai.service';
 import { EvolutionService } from './evolution.service';
+import { RegistrationService } from '../registration/registration.service';
+import { UsersService } from '../users/users.service';
 
 // Timeout para auto-aprovar (2 minutos)
 const AUTO_APPROVE_TIMEOUT_MS = 2 * 60 * 1000;
@@ -20,6 +22,9 @@ export class WhatsappService {
     @Inject(forwardRef(() => AIService))
     private readonly aiService: AIService,
     private readonly evolutionService: EvolutionService,
+    @Inject(forwardRef(() => RegistrationService))
+    private readonly registrationService: RegistrationService,
+    private readonly usersService: UsersService,
   ) {}
 
   async handleEvolutionWebhook(payload: any) {
@@ -61,35 +66,92 @@ export class WhatsappService {
     const pushName = data.pushName || '';
 
     // Extrai o conteúdo da mensagem
-    let content: string | undefined;
+    const content = this.extractMessageContent(data);
     let audioUrl: string | undefined;
     let messageType: MessageType = MessageType.TEXT;
 
-    if (data.message?.conversation) {
-      content = data.message.conversation;
-    } else if (data.message?.extendedTextMessage?.text) {
-      content = data.message.extendedTextMessage.text;
-    } else if (data.message?.audioMessage) {
+    if (data.message?.audioMessage) {
       messageType = MessageType.AUDIO;
       audioUrl = data.message.audioMessage.url;
     } else if (data.message?.imageMessage) {
       messageType = MessageType.IMAGE;
-      content = data.message.imageMessage.caption;
     }
 
-    // Busca o primeiro admin do sistema para associar a mensagem
-    const admin = await this.prisma.user.findFirst({
-      where: { role: 'ADMIN' },
-      orderBy: { createdAt: 'asc' },
-    });
+    // NOVO: Verifica se o telefone pertence a um usuário cadastrado
+    const user = await this.usersService.findByPhone(fromPhone);
 
-    if (!admin) {
-      this.logger.error('Nenhum admin encontrado no sistema');
-      return { status: 'error', reason: 'no admin user' };
+    if (!user) {
+      // Usuário NÃO cadastrado - verificar/iniciar fluxo de registro
+      return this.handleUnknownUser(fromPhone, content);
     }
 
+    // Verifica se existe fluxo de registro ativo (para completar)
+    const activeFlow = await this.registrationService.getActiveFlow(fromPhone);
+    if (activeFlow && content) {
+      const result = await this.registrationService.processFlowResponse(fromPhone, content);
+      if (result.completed) {
+        return { status: 'registration_completed', userId: result.userId };
+      }
+      return { status: 'registration_in_progress' };
+    }
+
+    // Usuário cadastrado - processar mensagem normalmente
+    return this.processUserMessage(user.id, fromPhone, pushName, content, audioUrl, messageType, messageId);
+  }
+
+  /**
+   * Handler para usuário desconhecido
+   */
+  private async handleUnknownUser(phone: string, content: string | null) {
+    // Verifica se já existe fluxo de registro ativo
+    const activeFlow = await this.registrationService.getActiveFlow(phone);
+
+    if (activeFlow) {
+      // Continuar fluxo existente
+      if (content) {
+        const result = await this.registrationService.processFlowResponse(phone, content);
+        if (result.completed) {
+          return { status: 'registration_completed', userId: result.userId };
+        }
+      }
+      return { status: 'registration_in_progress' };
+    }
+
+    // Iniciar novo fluxo de boas-vindas
+    await this.registrationService.startWelcomeFlow(phone);
+    return { status: 'welcome_sent' };
+  }
+
+  /**
+   * Extrai conteúdo de texto da mensagem
+   */
+  private extractMessageContent(data: any): string | null {
+    if (data.message?.conversation) {
+      return data.message.conversation;
+    }
+    if (data.message?.extendedTextMessage?.text) {
+      return data.message.extendedTextMessage.text;
+    }
+    if (data.message?.imageMessage?.caption) {
+      return data.message.imageMessage.caption;
+    }
+    return null;
+  }
+
+  /**
+   * Processa mensagem de usuário cadastrado
+   */
+  private async processUserMessage(
+    userId: string,
+    fromPhone: string,
+    pushName: string,
+    content: string | null,
+    audioUrl: string | undefined,
+    messageType: MessageType,
+    messageId: string,
+  ) {
     // Verifica se é uma resposta de aprovação
-    const pendingMessage = await this.findPendingApproval(admin.id, fromPhone);
+    const pendingMessage = await this.findPendingApproval(userId, fromPhone);
     if (pendingMessage && content) {
       return this.handleApprovalResponse(pendingMessage, content.toLowerCase().trim());
     }
@@ -103,7 +165,7 @@ export class WhatsappService {
     // Salva a mensagem
     const message = await this.prisma.whatsappMessage.create({
       data: {
-        userId: admin.id,
+        userId: userId,
         externalId: messageId,
         fromPhone: fromPhone,
         type: messageType,
@@ -113,7 +175,7 @@ export class WhatsappService {
       },
     });
 
-    this.logger.log(`Mensagem salva: ${message.id} de ${fromPhone}`);
+    this.logger.log(`Mensagem salva: ${message.id} de ${fromPhone} para usuário ${userId}`);
 
     // Processa com IA de forma assíncrona
     this.processMessageWithAI(message.id, messageType, fromPhone);

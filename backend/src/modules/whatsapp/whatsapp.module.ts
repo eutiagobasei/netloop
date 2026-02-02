@@ -5,9 +5,17 @@ import { EvolutionService } from './evolution.service';
 import { ContactsModule } from '../contacts/contacts.module';
 import { AIModule } from '../ai/ai.module';
 import { SettingsModule } from '../settings/settings.module';
+import { RegistrationModule } from '../registration/registration.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
-  imports: [ContactsModule, forwardRef(() => AIModule), SettingsModule],
+  imports: [
+    ContactsModule,
+    forwardRef(() => AIModule),
+    SettingsModule,
+    forwardRef(() => RegistrationModule),
+    UsersModule,
+  ],
   controllers: [WhatsappController],
   providers: [WhatsappService, EvolutionService],
   exports: [WhatsappService, EvolutionService],

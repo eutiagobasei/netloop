@@ -10,6 +10,8 @@ import { ConnectionsModule } from './modules/connections/connections.module';
 import { WhatsappModule } from './modules/whatsapp/whatsapp.module';
 import { SettingsModule } from './modules/settings/settings.module';
 import { AIModule } from './modules/ai/ai.module';
+import { UploadsModule } from './modules/uploads/uploads.module';
+import { RegistrationModule } from './modules/registration/registration.module';
 
 @Module({
   imports: [
@@ -32,6 +34,8 @@ import { AIModule } from './modules/ai/ai.module';
     WhatsappModule,
     SettingsModule,
     AIModule,
+    UploadsModule,
+    RegistrationModule,
   ],
 })
 export class AppModule {}
