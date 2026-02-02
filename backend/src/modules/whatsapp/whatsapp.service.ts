@@ -148,6 +148,11 @@ export class WhatsappService {
         const extraction = await this.aiService.extractContactData(transcription);
         if (extraction.success) {
           extractedData = extraction.data;
+
+          // Cria contato automaticamente se tiver nome
+          if (extractedData?.name) {
+            await this.createContactAutomatically(message.userId, extractedData, transcription);
+          }
         }
       }
 
@@ -265,5 +270,54 @@ export class WhatsappService {
 
     // TODO: Implementar verificação de assinatura específica do provider (Evolution, etc)
     return true;
+  }
+
+  private async createContactAutomatically(
+    userId: string,
+    extractedData: any,
+    transcription: string,
+  ) {
+    try {
+      // Verifica se já existe contato com mesmo nome
+      if (extractedData.name) {
+        const existingByName = await this.prisma.contact.findFirst({
+          where: { userId, name: extractedData.name },
+        });
+
+        if (existingByName) {
+          this.logger.log(`Contato já existe com nome: ${extractedData.name}`);
+          return;
+        }
+      }
+
+      // Verifica se já existe contato com mesmo telefone
+      if (extractedData.phone) {
+        const existingByPhone = await this.prisma.contact.findFirst({
+          where: { userId, phone: extractedData.phone },
+        });
+
+        if (existingByPhone) {
+          this.logger.log(`Contato já existe com telefone: ${extractedData.phone}`);
+          return;
+        }
+      }
+
+      // Cria o contato
+      const contact = await this.contactsService.create(userId, {
+        name: extractedData.name,
+        phone: extractedData.phone || undefined,
+        email: extractedData.email || undefined,
+        company: extractedData.company || undefined,
+        position: extractedData.position || undefined,
+        location: extractedData.location || undefined,
+        notes: extractedData.context || undefined,
+        context: transcription,
+        rawTranscription: transcription,
+      });
+
+      this.logger.log(`Contato criado automaticamente: ${contact.name} (ID: ${contact.id})`);
+    } catch (error) {
+      this.logger.error('Erro ao criar contato automaticamente:', error);
+    }
   }
 }
