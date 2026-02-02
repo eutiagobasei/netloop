@@ -34,10 +34,46 @@ export class UsersService {
     });
   }
 
+  /**
+   * Normaliza número de telefone brasileiro
+   * Adiciona o 9º dígito se necessário
+   */
+  private normalizePhoneNumber(phone: string): string {
+    // Remove caracteres não numéricos
+    let cleaned = phone.replace(/\D/g, '');
+
+    // Se começa com 55 (Brasil) e tem 12 dígitos (sem o 9º dígito)
+    if (cleaned.startsWith('55') && cleaned.length === 12) {
+      // Formato: 55 + DDD(2) + número(8) = 12 dígitos
+      // Precisa adicionar o 9: 55 + DDD(2) + 9 + número(8) = 13 dígitos
+      const ddd = cleaned.substring(2, 4);
+      const number = cleaned.substring(4);
+
+      // Só adiciona 9 se for celular (começa com 6, 7, 8 ou 9)
+      if (['6', '7', '8', '9'].includes(number[0])) {
+        cleaned = `55${ddd}9${number}`;
+      }
+    }
+
+    return cleaned;
+  }
+
   async findByPhone(phone: string) {
-    return this.prisma.user.findUnique({
-      where: { phone },
+    const normalizedPhone = this.normalizePhoneNumber(phone);
+
+    // Tenta com o número normalizado (com 9º dígito)
+    let user = await this.prisma.user.findFirst({
+      where: { phone: normalizedPhone },
     });
+
+    // Se não encontrou, tenta com o número original
+    if (!user) {
+      user = await this.prisma.user.findFirst({
+        where: { phone: phone.replace(/\D/g, '') },
+      });
+    }
+
+    return user;
   }
 
   async update(id: string, dto: UpdateUserDto) {
