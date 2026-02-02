@@ -69,18 +69,22 @@ export class WhatsappService {
     }
 
     // Extrai o número de telefone
-    // Em grupos, o remoteJid é o ID do grupo e participant é o número do remetente
-    // Em conversas privadas, remoteJid é o número do remetente
+    // Para contas comerciais: senderPn contém o número real
+    // Em grupos: participant contém o número do remetente
+    // Em conversas privadas: remoteJid contém o número
     let fromPhone = '';
-    if (data.key.participant) {
-      // Mensagem de grupo - usa participant como remetente
+    if (data.key.senderPn) {
+      // Conta comercial - senderPn tem o número real
+      fromPhone = data.key.senderPn.split('@')[0] || '';
+    } else if (data.key.participant) {
+      // Mensagem de grupo - usa participant
       fromPhone = data.key.participant.split('@')[0] || '';
     } else {
-      // Mensagem privada - usa remoteJid como remetente
+      // Mensagem privada normal - usa remoteJid
       fromPhone = remoteJid?.split('@')[0] || '';
     }
 
-    this.logger.log(`Número extraído: ${fromPhone}, remoteJid: ${remoteJid}`);
+    this.logger.log(`Número extraído: ${fromPhone}, senderPn: ${data.key.senderPn}, remoteJid: ${remoteJid}`);
     const pushName = data.pushName || '';
 
     // Extrai o conteúdo da mensagem
