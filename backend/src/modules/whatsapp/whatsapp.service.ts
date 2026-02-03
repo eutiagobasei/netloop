@@ -460,15 +460,28 @@ export class WhatsappService {
   }
 
   /**
-   * Envia resposta de busca de contato via WhatsApp
+   * Envia resposta de busca de contato via WhatsApp - conversacional
    */
-  private async sendSearchResponse(toPhone: string, result: { type: string; message: string; data: any[] }) {
+  private async sendSearchResponse(
+    toPhone: string,
+    result: { type: string; message: string; data: any[]; suggestions?: string[]; query?: string }
+  ) {
     let responseText: string;
 
     if (result.type === 'nenhum') {
-      responseText = '🔍 Não encontrei nenhum contato com esse nome na sua rede.\n\n💡 _Envie informações sobre a pessoa para cadastrá-la._';
+      const query = result.query || 'esse nome';
+
+      // Se tem sugestões, oferece alternativas
+      if (result.suggestions && result.suggestions.length > 0) {
+        const suggestionList = result.suggestions.slice(0, 3).map(s => `*${s}*`).join(', ');
+        responseText = `🤔 Hmm, não encontrei ninguém chamado *${query}* na sua rede.\n\nVocê quis dizer ${suggestionList}?\n\n💡 _Ou envie informações sobre a pessoa para cadastrá-la._`;
+      } else {
+        // Sem sugestões - mensagem simples mas conversacional
+        responseText = `🤔 Não encontrei *${query}* na sua rede ainda.\n\n💡 _Envie um áudio ou texto com informações sobre essa pessoa e eu cadastro pra você!_`;
+      }
     } else {
-      responseText = `🔍 *Resultado da busca:*\n\n${result.message}`;
+      // Encontrou - resposta direta do service já é conversacional
+      responseText = result.message;
     }
 
     await this.evolutionService.sendTextMessage(toPhone, responseText);

@@ -13,6 +13,8 @@ export interface SearchResult {
   type: 'direto' | 'ponte' | 'nenhum';
   data: any[];
   message: string;
+  suggestions?: string[]; // Nomes similares encontrados
+  query?: string; // Query original para contexto
 }
 
 interface ContactWithSimilarity {
@@ -49,6 +51,100 @@ export class ContactsService {
     @Inject(forwardRef(() => AIService))
     private readonly aiService: AIService,
   ) {}
+
+  // ============================================
+  // NORMALIZAÇÃO E SIMILARIDADE DE NOMES
+  // ============================================
+
+  /**
+   * Normaliza string para comparação (remove acentos, lowercase, variações)
+   */
+  private normalizeString(str: string): string {
+    return str
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+      .replace(/ph/gi, 'f')            // ph → f (Philippe → Felipe)
+      .replace(/th(?=[aeiou])/gi, 't') // th antes de vogal → t (Matheus → Mateus)
+      .replace(/y/gi, 'i')             // y → i (Thaysa → Taisa)
+      .replace(/w/gi, 'v')             // w → v (Wagner → Vagner)
+      .replace(/\s+/g, ' ')            // Múltiplos espaços → único
+      .trim();
+  }
+
+  /**
+   * Calcula distância de Levenshtein entre duas strings
+   */
+  private levenshteinDistance(str1: string, str2: string): number {
+    const m = str1.length;
+    const n = str2.length;
+    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+
+    for (let i = 0; i <= m; i++) dp[i][0] = i;
+    for (let j = 0; j <= n; j++) dp[0][j] = j;
+
+    for (let i = 1; i <= m; i++) {
+      for (let j = 1; j <= n; j++) {
+        if (str1[i - 1] === str2[j - 1]) {
+          dp[i][j] = dp[i - 1][j - 1];
+        } else {
+          dp[i][j] = Math.min(
+            dp[i - 1][j - 1] + 1, // substituição
+            dp[i - 1][j] + 1,     // deleção
+            dp[i][j - 1] + 1      // inserção
+          );
+        }
+      }
+    }
+    return dp[m][n];
+  }
+
+  /**
+   * Calcula similaridade entre duas strings (0 a 1)
+   */
+  private calculateSimilarity(str1: string, str2: string): number {
+    const s1 = this.normalizeString(str1);
+    const s2 = this.normalizeString(str2);
+
+    // Se normalizado é igual, 100% similar
+    if (s1 === s2) return 1;
+
+    // Se um contém o outro, alta similaridade
+    if (s1.includes(s2) || s2.includes(s1)) return 0.9;
+
+    const longer = s1.length > s2.length ? s1 : s2;
+    const shorter = s1.length > s2.length ? s2 : s1;
+
+    if (longer.length === 0) return 1;
+
+    const distance = this.levenshteinDistance(longer, shorter);
+    return (longer.length - distance) / longer.length;
+  }
+
+  /**
+   * Busca nomes similares na base de contatos
+   */
+  private async findSimilarNames(
+    ownerId: string,
+    searchName: string,
+    threshold = 0.6
+  ): Promise<{ name: string; similarity: number }[]> {
+    const contacts = await this.prisma.contact.findMany({
+      where: { ownerId },
+      select: { name: true },
+    });
+
+    const similar = contacts
+      .map(c => ({
+        name: c.name,
+        similarity: this.calculateSimilarity(searchName, c.name),
+      }))
+      .filter(c => c.similarity >= threshold && c.similarity < 1)
+      .sort((a, b) => b.similarity - a.similarity)
+      .slice(0, 5);
+
+    return similar;
+  }
 
   async create(ownerId: string, dto: CreateContactDto) {
     const { tagIds, ...contactData } = dto;
@@ -337,22 +433,27 @@ export class ContactsService {
 
   /**
    * Busca em 2 níveis: primeiro contatos diretos, depois conexões mencionadas (ponte)
+   * Com suporte a variações de nomes (Matheus/Mateus, João/Joao)
    */
   async search(ownerId: string, query: string): Promise<SearchResult> {
     this.logger.log(`Busca em 2 níveis: "${query}"`);
 
-    // 1. Verificar se é busca direta por nome (ex: "sobre o João", "quem é Maria")
-    const nameMatch = query.match(/(?:sobre\s+(?:o|a)?\s*|quem\s+[eé]\s*)(.+)/i);
+    // Extrair nome da query
+    let searchName = query;
+    const nameMatch = query.match(/(?:sobre\s+(?:o|a)?\s*|quem\s+[eé]\s*(?:o|a)?\s*)(.+)/i);
     if (nameMatch) {
-      const name = nameMatch[1].trim();
-      const direct = await this.searchByName(ownerId, name);
-      if (direct) {
-        return {
-          type: 'direto',
-          data: [direct],
-          message: this.formatDirectMessage(direct),
-        };
-      }
+      searchName = nameMatch[1].trim();
+    }
+
+    // 1. Busca por nome com normalização (encontra Matheus buscando por Mateus)
+    const directByName = await this.searchByNameNormalized(ownerId, searchName);
+    if (directByName) {
+      return {
+        type: 'direto',
+        data: [directByName],
+        message: this.formatDirectMessage(directByName),
+        query: searchName,
+      };
     }
 
     // 2. Busca semântica em Contacts (Nível 1)
@@ -366,6 +467,7 @@ export class ContactsService {
             type: 'direto',
             data: directResults,
             message: this.formatDirectMessage(directResults[0]),
+            query: searchName,
           };
         }
       }
@@ -380,6 +482,7 @@ export class ContactsService {
         type: 'direto',
         data: textResults,
         message: this.formatDirectMessage(textResults[0]),
+        query: searchName,
       };
     }
 
@@ -390,18 +493,68 @@ export class ContactsService {
         type: 'ponte',
         data: bridgeResults,
         message: this.formatBridgeMessage(bridgeResults),
+        query: searchName,
       };
     }
+
+    // 5. Não encontrou - buscar nomes similares para sugestão
+    const similarNames = await this.findSimilarNames(ownerId, searchName);
+    const suggestions = similarNames.map(s => s.name);
 
     return {
       type: 'nenhum',
       data: [],
       message: 'Nenhum contato encontrado para essa busca.',
+      suggestions,
+      query: searchName,
     };
   }
 
   /**
-   * Busca contato por nome (case-insensitive)
+   * Busca contato por nome com normalização (encontra variações)
+   * Mateus encontra Matheus, Joao encontra João, etc.
+   */
+  private async searchByNameNormalized(ownerId: string, searchName: string) {
+    const normalizedSearch = this.normalizeString(searchName);
+    this.logger.log(`Busca normalizada: "${searchName}" → "${normalizedSearch}"`);
+
+    // Buscar todos os contatos e comparar normalizados
+    const contacts = await this.prisma.contact.findMany({
+      where: { ownerId },
+      include: { tags: { include: { tag: true } } },
+    });
+
+    // Encontrar match exato normalizado ou alta similaridade
+    for (const contact of contacts) {
+      const normalizedName = this.normalizeString(contact.name);
+
+      // Match exato após normalização
+      if (normalizedName === normalizedSearch) {
+        this.logger.log(`Match exato normalizado: ${contact.name}`);
+        return contact;
+      }
+
+      // Nome contém a busca ou vice-versa (ex: "João Silva" contém "João")
+      if (normalizedName.includes(normalizedSearch) || normalizedSearch.includes(normalizedName)) {
+        this.logger.log(`Match parcial: ${contact.name} ↔ ${searchName}`);
+        return contact;
+      }
+    }
+
+    // Busca por alta similaridade (> 85%)
+    for (const contact of contacts) {
+      const similarity = this.calculateSimilarity(searchName, contact.name);
+      if (similarity >= 0.85) {
+        this.logger.log(`Match por similaridade (${(similarity * 100).toFixed(0)}%): ${contact.name}`);
+        return contact;
+      }
+    }
+
+    return null;
+  }
+
+  /**
+   * Busca contato por nome (case-insensitive) - método legado
    */
   private async searchByName(ownerId: string, name: string) {
     return this.prisma.contact.findFirst({
@@ -486,39 +639,58 @@ export class ContactsService {
   }
 
   /**
-   * Formata mensagem para resultado direto
+   * Formata mensagem para resultado direto - mais conversacional
    */
   private formatDirectMessage(contact: any): string {
-    const parts = [`Encontrei *${contact.name}*`];
+    const parts: string[] = [];
+
+    // Variação de abertura para ser mais natural
+    const openers = ['Achei!', 'Encontrei!', 'Sim!', 'Tenho aqui:'];
+    const opener = openers[Math.floor(Math.random() * openers.length)];
+
+    parts.push(`${opener} *${contact.name}*`);
 
     if (contact.position && contact.company) {
-      parts.push(`- ${contact.position} na ${contact.company}`);
+      parts.push(`é ${contact.position} na ${contact.company}.`);
     } else if (contact.position) {
-      parts.push(`- ${contact.position}`);
+      parts.push(`trabalha como ${contact.position}.`);
     } else if (contact.company) {
-      parts.push(`- ${contact.company}`);
+      parts.push(`é da ${contact.company}.`);
+    }
+
+    if (contact.location) {
+      parts.push(`📍 ${contact.location}`);
     }
 
     if (contact.context) {
-      parts.push(`\n📝 ${contact.context}`);
+      parts.push(`\n\n📝 _${contact.context}_`);
+    }
+
+    if (contact.phone) {
+      parts.push(`\n\n📱 ${contact.phone}`);
+    }
+
+    if (contact.email) {
+      parts.push(`📧 ${contact.email}`);
     }
 
     return parts.join(' ');
   }
 
   /**
-   * Formata mensagem para resultado ponte
+   * Formata mensagem para resultado ponte - mais conversacional
    */
   private formatBridgeMessage(connections: MentionedConnectionWithContact[]): string {
     if (connections.length === 1) {
       const conn = connections[0];
-      return `Não tenho *${conn.name}* como contato direto, mas *${conn.contact.name}* mencionou: "${conn.description || 'conhece essa pessoa'}"`;
+      const desc = conn.description || 'conhece essa pessoa';
+      return `Não tenho *${conn.name}* na sua rede diretamente, mas *${conn.contact.name}* mencionou:\n\n_"${desc}"_\n\nQuer que eu busque mais informações?`;
     }
 
     const lines = connections.map(
-      (conn) => `• *${conn.name}* (mencionado por ${conn.contact.name})`,
+      (conn) => `• *${conn.name}* - mencionado por *${conn.contact.name}*`,
     );
-    return `Encontrei ${connections.length} menções:\n${lines.join('\n')}`;
+    return `Encontrei ${connections.length} pessoas com esse nome mencionadas na sua rede:\n\n${lines.join('\n')}\n\nQual delas você quer saber mais?`;
   }
 
   // ============================================
