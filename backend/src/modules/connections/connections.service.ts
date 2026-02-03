@@ -189,10 +189,12 @@ export class ConnectionsService {
     const phoneToUserMap = new Map<string, string>();
     for (const u of allUsers) {
       const phoneVariations = this.normalizePhoneVariations(u.phone);
+      console.log(`[GRAPH DEBUG] User ${u.id} phone variations:`, phoneVariations);
       for (const variation of phoneVariations) {
         phoneToUserMap.set(variation, u.id);
       }
     }
+    console.log(`[GRAPH DEBUG] Phone map size: ${phoneToUserMap.size}`);
 
     for (const conn of firstDegreeConnections) {
       if (!visitedIds.has(conn.contactId)) {
@@ -222,12 +224,15 @@ export class ConnectionsService {
         if (depth >= 2) {
           // 1. Verifica se o contato tem telefone que corresponde a um usuário
           const contactPhoneVariations = this.normalizePhoneVariations(conn.contact.phone);
+          console.log(`[GRAPH DEBUG] Contact ${conn.contact.name} phone: ${conn.contact.phone} -> variations:`, contactPhoneVariations);
           let linkedUserId: string | null = null;
 
           // Procura match em qualquer variação do telefone
           for (const variation of contactPhoneVariations) {
+            console.log(`[GRAPH DEBUG] Checking variation ${variation}, exists in map: ${phoneToUserMap.has(variation)}`);
             if (phoneToUserMap.has(variation)) {
               linkedUserId = phoneToUserMap.get(variation)!;
+              console.log(`[GRAPH DEBUG] MATCH! Linked to user ${linkedUserId}`);
               break;
             }
           }
