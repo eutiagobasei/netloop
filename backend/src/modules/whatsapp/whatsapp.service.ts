@@ -115,15 +115,33 @@ export class WhatsappService {
 
     if (!user) {
       // Usuário NÃO cadastrado - verificar/iniciar fluxo de registro
-      return this.handleUnknownUser(fromPhone, content);
+      return this.handleUnknownUser(fromPhone, content, audioUrl, messageType);
     }
 
     // Verifica se existe fluxo de registro ativo (para completar)
     const activeFlow = await this.registrationService.getActiveFlow(fromPhone);
-    if (activeFlow && content) {
-      const result = await this.registrationService.processFlowResponse(fromPhone, content);
-      if (result.completed) {
-        return { status: 'registration_completed', userId: result.userId };
+    if (activeFlow) {
+      // Se for áudio, transcreve primeiro
+      let messageContent = content;
+      if (messageType === MessageType.AUDIO && audioUrl) {
+        try {
+          messageContent = await this.aiService.transcribeAudio(audioUrl);
+          this.logger.log(`Áudio transcrito no fluxo de registro: ${messageContent?.substring(0, 50)}...`);
+        } catch (error) {
+          this.logger.error(`Erro ao transcrever áudio no registro: ${error.message}`);
+          await this.evolutionService.sendTextMessage(
+            fromPhone,
+            '🎤 Não consegui entender o áudio. Por favor, envie sua resposta por texto.'
+          );
+          return { status: 'audio_transcription_failed' };
+        }
+      }
+
+      if (messageContent) {
+        const result = await this.registrationService.processFlowResponse(fromPhone, messageContent);
+        if (result.completed) {
+          return { status: 'registration_completed', userId: result.userId };
+        }
       }
       return { status: 'registration_in_progress' };
     }
@@ -135,14 +153,35 @@ export class WhatsappService {
   /**
    * Handler para usuário desconhecido
    */
-  private async handleUnknownUser(phone: string, content: string | null) {
+  private async handleUnknownUser(
+    phone: string,
+    content: string | null,
+    audioUrl?: string,
+    messageType?: MessageType
+  ) {
     // Verifica se já existe fluxo de registro ativo
     const activeFlow = await this.registrationService.getActiveFlow(phone);
 
     if (activeFlow) {
+      // Se for áudio, transcreve primeiro
+      let messageContent = content;
+      if (messageType === MessageType.AUDIO && audioUrl) {
+        try {
+          messageContent = await this.aiService.transcribeAudio(audioUrl);
+          this.logger.log(`Áudio transcrito no registro (unknown): ${messageContent?.substring(0, 50)}...`);
+        } catch (error) {
+          this.logger.error(`Erro ao transcrever áudio no registro: ${error.message}`);
+          await this.evolutionService.sendTextMessage(
+            phone,
+            '🎤 Não consegui entender o áudio. Por favor, envie sua resposta por texto.'
+          );
+          return { status: 'audio_transcription_failed' };
+        }
+      }
+
       // Continuar fluxo existente
-      if (content) {
-        const result = await this.registrationService.processFlowResponse(phone, content);
+      if (messageContent) {
+        const result = await this.registrationService.processFlowResponse(phone, messageContent);
         if (result.completed) {
           return { status: 'registration_completed', userId: result.userId };
         }
