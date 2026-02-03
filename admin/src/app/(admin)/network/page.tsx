@@ -1,13 +1,92 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
+import { useSearchParams } from 'next/navigation'
+import Cookies from 'js-cookie'
 import { useConnections } from '@/hooks/use-connections'
 import { NetworkGraph } from '@/components/network/network-graph'
 import { NodeDetailsPanel } from '@/components/network/node-details-panel'
+import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { GraphNode } from '@/lib/api'
 import { RefreshCw } from 'lucide-react'
+import { useQueryClient } from '@tanstack/react-query'
 
 export default function NetworkPage() {
+  const searchParams = useSearchParams()
+  const queryClient = useQueryClient()
+  const [impersonation, setImpersonation] = useState<{
+    isImpersonating: boolean
+    userName?: string
+  }>({ isImpersonating: false })
+
+  // Detectar modo impersonação na inicialização
+  useEffect(() => {
+    const isImpersonateMode = searchParams.get('impersonate') === 'true'
+
+    if (isImpersonateMode) {
+      // Ler dados de impersonação do localStorage
+      const impersonationDataStr = localStorage.getItem('impersonationData')
+      if (impersonationDataStr) {
+        try {
+          const data = JSON.parse(impersonationDataStr)
+
+          // Configurar cookie com o token de impersonação
+          Cookies.set('accessToken', data.accessToken, { expires: 1 / 24 }) // 1 hora
+          Cookies.set('impersonating', JSON.stringify({
+            userId: data.userId,
+            userName: data.userName,
+            userEmail: data.userEmail,
+            adminId: data.adminId,
+            adminName: data.adminName,
+          }), { expires: 1 / 24 })
+
+          // Remover refreshToken (não funciona com impersonação)
+          Cookies.remove('refreshToken')
+
+          // Limpar localStorage
+          localStorage.removeItem('impersonationData')
+
+          // Atualizar estado
+          setImpersonation({
+            isImpersonating: true,
+            userName: data.userName,
+          })
+
+          // Invalidar queries para recarregar com novo usuário
+          queryClient.invalidateQueries()
+
+          // Remover parâmetro da URL
+          window.history.replaceState({}, '', '/network')
+        } catch (e) {
+          console.error('Erro ao processar impersonação:', e)
+        }
+      }
+    } else {
+      // Verificar se já está em modo impersonação (reload da página)
+      const impersonatingCookie = Cookies.get('impersonating')
+      if (impersonatingCookie) {
+        try {
+          const data = JSON.parse(impersonatingCookie)
+          setImpersonation({
+            isImpersonating: true,
+            userName: data.userName,
+          })
+        } catch (e) {
+          // Ignorar erro
+        }
+      }
+    }
+  }, [searchParams, queryClient])
+
+  const handleExitImpersonation = () => {
+    // Limpar cookies de impersonação
+    Cookies.remove('accessToken')
+    Cookies.remove('impersonating')
+
+    // Fechar a aba
+    window.close()
+  }
+
   const { graph, isLoading, refetch } = useConnections(2)
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
 
@@ -50,7 +129,16 @@ export default function NetworkPage() {
   }
 
   return (
-    <div className="relative h-full">
+    <div className="relative h-full flex flex-col">
+      {/* Banner de impersonação */}
+      {impersonation.isImpersonating && impersonation.userName && (
+        <ImpersonationBanner
+          userName={impersonation.userName}
+          onExit={handleExitImpersonation}
+        />
+      )}
+
+      <div className="relative flex-1">
       {/* Header com estatisticas */}
       <div className="absolute left-4 top-4 z-10 flex items-center gap-4">
         <div className="rounded-lg bg-white p-3 shadow-md">
@@ -96,6 +184,7 @@ export default function NetworkPage() {
       {selectedNode && (
         <NodeDetailsPanel node={selectedNode} onClose={handleClosePanel} />
       )}
+      </div>
     </div>
   )
 }

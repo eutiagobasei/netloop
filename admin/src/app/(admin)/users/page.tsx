@@ -46,7 +46,7 @@ interface ImpersonateResponse {
   }
 }
 
-const WEB_URL = process.env.NEXT_PUBLIC_WEB_URL || 'http://localhost:3001'
+// O portal do usuário está em /network dentro do próprio admin
 
 export default function UsersPage() {
   const [search, setSearch] = useState('')
@@ -66,34 +66,21 @@ export default function UsersPage() {
       return response.data
     },
     onSuccess: (data) => {
-      // Salvar token atual do admin para poder voltar depois
-      const currentToken = Cookies.get('accessToken')
-      const currentRefreshToken = Cookies.get('refreshToken')
-
-      if (currentToken) {
-        Cookies.set('adminAccessToken', currentToken, { expires: 1 })
-      }
-      if (currentRefreshToken) {
-        Cookies.set('adminRefreshToken', currentRefreshToken, { expires: 1 })
-      }
-
-      // Salvar informações da impersonação
-      Cookies.set('impersonating', JSON.stringify({
+      // Salvar informações da impersonação em localStorage (para a nova aba poder ler)
+      const impersonationData = {
+        accessToken: data.accessToken,
         userId: data.impersonating.id,
         userName: data.impersonating.name,
         userEmail: data.impersonating.email,
         adminId: data.admin.id,
         adminName: data.admin.name,
-      }), { expires: 1 / 24 }) // 1 hora
+      }
 
-      // Substituir token pelo token de impersonação
-      Cookies.set('accessToken', data.accessToken, { expires: 1 / 24 }) // 1 hora
+      // Salvar no localStorage para a nova aba poder usar
+      localStorage.setItem('impersonationData', JSON.stringify(impersonationData))
 
-      // Remover refreshToken pois não funciona com impersonação
-      Cookies.remove('refreshToken')
-
-      // Redirecionar para o portal web na mesma janela
-      window.location.href = `${WEB_URL}/network`
+      // Abrir em nova aba - a nova aba vai ler do localStorage e configurar os cookies
+      window.open('/network?impersonate=true', '_blank')
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Erro ao impersonar usuário')
