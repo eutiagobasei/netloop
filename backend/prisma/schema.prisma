@@ -126,12 +126,34 @@ model Contact {
   updatedAt   DateTime @updatedAt
 
   // Relacionamentos
-  owner       User           @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  tags        ContactTag[]
-  connections Connection[]
+  owner                User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tags                 ContactTag[]
+  connections          Connection[]
+  mentionedConnections MentionedConnection[]
 
   @@index([ownerId])
   @@map("contacts")
+}
+
+// ============================================
+// MENTIONED_CONNECTION - Conexões mencionadas em texto
+// ============================================
+
+model MentionedConnection {
+  id          String   @id @default(uuid())
+  contactId   String   // Contato principal que mencionou
+  name        String   // Nome da pessoa mencionada
+  description String?  @db.Text  // Contexto/descrição sobre a pessoa
+  tags        String[] // Tags associadas
+  phone       String?  // Telefone se mencionado
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+
+  @@index([contactId])
+  @@index([name])
+  @@map("mentioned_connections")
 }
 
 // ============================================

@@ -28,11 +28,16 @@ export class WhatsappService {
   ) {}
 
   async handleEvolutionWebhook(payload: any) {
-    this.logger.log(`Webhook Evolution recebido: event=${payload?.event}`);
+    // Normaliza o evento para lowercase com ponto
+    const rawEvent = payload?.event || '';
+    const normalizedEvent = rawEvent.toLowerCase().replace(/_/g, '.');
+
+    this.logger.log(`Webhook Evolution recebido: event=${rawEvent} (normalizado: ${normalizedEvent})`);
+    this.logger.log(`Payload keys: ${Object.keys(payload || {}).join(', ')}`);
 
     // Só processa eventos de mensagens recebidas
-    if (payload?.event !== 'messages.upsert') {
-      this.logger.log(`Evento ignorado: ${payload?.event}`);
+    if (normalizedEvent !== 'messages.upsert') {
+      this.logger.log(`Evento ignorado: ${rawEvent}`);
       return { status: 'ignored', reason: 'not a message event' };
     }
 
@@ -359,35 +364,88 @@ export class WhatsappService {
         transcription = message.content;
       }
 
-      // Extrair dados do contato
-      if (transcription) {
+      if (!transcription) {
+        this.logger.log('Nenhum conteúdo para processar');
+        return;
+      }
+
+      // 1. CLASSIFICAR INTENÇÃO DA MENSAGEM
+      const intent = await this.aiService.classifyIntent(transcription);
+      this.logger.log(`Intenção detectada para ${messageId}: ${intent}`);
+
+      // 2. SE FOR QUERY → BUSCAR E RESPONDER
+      if (intent === 'query') {
+        const querySubject = await this.aiService.extractQuerySubject(transcription);
+
+        if (querySubject) {
+          const searchResult = await this.contactsService.search(message.userId, querySubject);
+          await this.sendSearchResponse(fromPhone, searchResult);
+        } else {
+          // Não conseguiu extrair o assunto, responde pedindo mais detalhes
+          await this.evolutionService.sendTextMessage(
+            fromPhone,
+            '🤔 Não entendi sobre quem você quer saber. Pode me dizer o nome da pessoa?'
+          );
+        }
+
+        // Atualiza a mensagem como processada
+        await this.prisma.whatsappMessage.update({
+          where: { id: messageId },
+          data: {
+            transcription,
+            processed: true,
+            processedAt: new Date(),
+            approvalStatus: 'APPROVED',
+          },
+        });
+
+        this.logger.log(`Query processada para ${messageId}: ${querySubject || 'assunto não identificado'}`);
+        return;
+      }
+
+      // 3. SE FOR CONTACT_INFO → FLUXO DE CADASTRO
+      if (intent === 'contact_info') {
         this.logger.log(`Extraindo dados do texto: ${messageId}`);
         const extraction = await this.aiService.extractContactData(transcription);
         if (extraction.success) {
           extractedData = extraction.data;
         }
+
+        // Atualiza a mensagem com os dados processados
+        await this.prisma.whatsappMessage.update({
+          where: { id: messageId },
+          data: {
+            transcription,
+            extractedData,
+            processed: true,
+            processedAt: new Date(),
+          },
+        });
+
+        // Se extraiu dados de contato, envia para aprovação
+        if (extractedData?.name) {
+          await this.sendApprovalRequest(messageId, fromPhone, extractedData);
+
+          // Agenda auto-aprovação
+          this.scheduleAutoApproval(messageId, fromPhone);
+        }
+
+        this.logger.log(`Mensagem ${messageId} processada com sucesso`);
+        return;
       }
 
-      // Atualiza a mensagem com os dados processados
+      // 4. OUTROS (saudação, etc) → apenas marca como processada
       await this.prisma.whatsappMessage.update({
         where: { id: messageId },
         data: {
           transcription,
-          extractedData,
           processed: true,
           processedAt: new Date(),
+          approvalStatus: 'APPROVED',
         },
       });
 
-      // Se extraiu dados de contato, envia para aprovação
-      if (extractedData?.name) {
-        await this.sendApprovalRequest(messageId, fromPhone, extractedData);
-
-        // Agenda auto-aprovação
-        this.scheduleAutoApproval(messageId, fromPhone);
-      }
-
-      this.logger.log(`Mensagem ${messageId} processada com sucesso`);
+      this.logger.log(`Mensagem ${messageId} ignorada (intent: ${intent})`);
     } catch (error) {
       this.logger.error(`Erro ao processar mensagem ${messageId}:`, error);
 
@@ -399,6 +457,21 @@ export class WhatsappService {
         },
       });
     }
+  }
+
+  /**
+   * Envia resposta de busca de contato via WhatsApp
+   */
+  private async sendSearchResponse(toPhone: string, result: { type: string; message: string; data: any[] }) {
+    let responseText: string;
+
+    if (result.type === 'nenhum') {
+      responseText = '🔍 Não encontrei nenhum contato com esse nome na sua rede.\n\n💡 _Envie informações sobre a pessoa para cadastrá-la._';
+    } else {
+      responseText = `🔍 *Resultado da busca:*\n\n${result.message}`;
+    }
+
+    await this.evolutionService.sendTextMessage(toPhone, responseText);
   }
 
   private async sendApprovalRequest(messageId: string, toPhone: string, extractedData: any) {

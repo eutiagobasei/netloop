@@ -10,8 +10,22 @@ export interface ExtractedContactData {
   confidence?: number;
 }
 
+export interface MentionedConnectionData {
+  name: string;
+  about?: string;
+  tags?: string[];
+  phone?: string;
+}
+
 export interface ExtractionResult {
   success: boolean;
   data: ExtractedContactData;
+  rawResponse?: string;
+}
+
+export interface ExtractionWithConnectionsResult {
+  success: boolean;
+  contact: ExtractedContactData;
+  connections: MentionedConnectionData[];
   rawResponse?: string;
 }

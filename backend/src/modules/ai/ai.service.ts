@@ -1,9 +1,13 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenAIService } from './services/openai.service';
 import { TranscriptionService } from './services/transcription.service';
-import { ExtractionService } from './services/extraction.service';
+import { ExtractionService, MessageIntent } from './services/extraction.service';
 import { EmbeddingService } from './services/embedding.service';
-import { ExtractedContactData, ExtractionResult } from './dto/extracted-contact.dto';
+import {
+  ExtractedContactData,
+  ExtractionResult,
+  ExtractionWithConnectionsResult,
+} from './dto/extracted-contact.dto';
 
 @Injectable()
 export class AIService {
@@ -31,10 +35,31 @@ export class AIService {
   }
 
   /**
+   * Classifica a intenção da mensagem: query, contact_info ou other
+   */
+  async classifyIntent(text: string): Promise<MessageIntent> {
+    return this.extractionService.classifyIntent(text);
+  }
+
+  /**
+   * Extrai o nome/assunto de uma busca
+   */
+  async extractQuerySubject(text: string): Promise<string | null> {
+    return this.extractionService.extractQuerySubject(text);
+  }
+
+  /**
    * Extrai dados de contato de um texto usando GPT
    */
   async extractContactData(text: string): Promise<ExtractionResult> {
     return this.extractionService.extractContactData(text);
+  }
+
+  /**
+   * Extrai dados de contato + conexões mencionadas de um texto
+   */
+  async extractWithConnections(text: string): Promise<ExtractionWithConnectionsResult> {
+    return this.extractionService.extractWithConnections(text);
   }
 
   /**

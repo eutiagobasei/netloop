@@ -35,6 +35,7 @@ export class WhatsappController {
     @Headers('x-webhook-signature') signature?: string,
   ) {
     this.logger.log(`Webhook recebido: ${payload?.event || 'unknown event'}`);
+    this.logger.log(`Payload keys: ${Object.keys(payload || {}).join(', ')}`);
 
     // Verifica a assinatura do webhook (se configurada)
     if (signature) {

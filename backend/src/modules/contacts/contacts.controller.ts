@@ -8,6 +8,8 @@ import {
   Param,
   Query,
   UseGuards,
+  Inject,
+  forwardRef,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -19,21 +21,67 @@ import {
 import { ContactsService } from './contacts.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
+import { ExtractTextDto } from './dto/extract-text.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { AIService } from '../ai/ai.service';
 
 @ApiTags('Contacts')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('contacts')
 export class ContactsController {
-  constructor(private readonly contactsService: ContactsService) {}
+  constructor(
+    private readonly contactsService: ContactsService,
+    @Inject(forwardRef(() => AIService))
+    private readonly aiService: AIService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Criar novo contato' })
   @ApiResponse({ status: 201, description: 'Contato criado com sucesso' })
   async create(@CurrentUser('id') userId: string, @Body() dto: CreateContactDto) {
     return this.contactsService.create(userId, dto);
+  }
+
+  @Post('extract')
+  @ApiOperation({
+    summary: 'Extrair dados de texto e criar/atualizar contato',
+    description: 'Recebe texto livre, extrai informações de contato via IA e salva (com merge se existir)',
+  })
+  @ApiResponse({ status: 201, description: 'Contato criado/atualizado com sucesso' })
+  @ApiResponse({ status: 400, description: 'Texto inválido ou extração falhou' })
+  async extractAndSave(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ExtractTextDto,
+  ) {
+    const extraction = await this.aiService.extractWithConnections(dto.text);
+
+    if (!extraction.success) {
+      throw new Error('Falha na extração de dados');
+    }
+
+    return this.contactsService.upsertFromExtraction(userId, extraction);
+  }
+
+  @Get('search')
+  @ApiOperation({
+    summary: 'Busca inteligente em 2 níveis',
+    description: 'Busca primeiro em contatos diretos, depois em conexões mencionadas (ponte)',
+  })
+  @ApiQuery({ name: 'q', required: true, description: 'Texto para busca' })
+  @ApiResponse({
+    status: 200,
+    description: 'Resultado da busca com tipo (direto/ponte/nenhum) e mensagem formatada',
+  })
+  async search(
+    @CurrentUser('id') userId: string,
+    @Query('q') query: string,
+  ) {
+    if (!query || query.trim().length < 2) {
+      return { type: 'nenhum', data: [], message: 'Digite ao menos 2 caracteres para buscar.' };
+    }
+    return this.contactsService.search(userId, query.trim());
   }
 
   @Get()
