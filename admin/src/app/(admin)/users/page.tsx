@@ -79,8 +79,8 @@ export default function UsersPage() {
       // Salvar no localStorage para a nova aba poder usar
       localStorage.setItem('impersonationData', JSON.stringify(impersonationData))
 
-      // Abrir em nova aba - a nova aba vai ler do localStorage e configurar os cookies
-      window.open('/network?impersonate=true', '_blank')
+      // Abrir página de ponte em nova aba - ela configura os cookies e redireciona
+      window.open('/impersonate', '_blank')
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Erro ao impersonar usuário')
