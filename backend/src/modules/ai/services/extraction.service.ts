@@ -16,10 +16,56 @@ export class ExtractionService {
   constructor(private readonly openaiService: OpenAIService) {}
 
   /**
+   * Lista de saudações comuns que devem ser ignoradas
+   */
+  private readonly GREETINGS = [
+    'oi', 'olá', 'ola', 'opa', 'e aí', 'eai', 'e ai', 'hey', 'hi', 'hello',
+    'bom dia', 'boa tarde', 'boa noite', 'tudo bem', 'tudo bom', 'como vai',
+    'fala', 'salve', 'eae', 'oie', 'oii', 'oiii', 'olar', 'hola',
+    'obrigado', 'obrigada', 'valeu', 'vlw', 'thanks', 'brigado', 'brigada',
+    'ok', 'blz', 'beleza', 'certo', 'entendi', 'show', 'top', 'massa',
+    'sim', 'não', 'nao', 'yes', 'no', 'yep', 'nope',
+  ];
+
+  /**
+   * Verifica se o texto é uma saudação simples
+   */
+  private isGreeting(text: string): boolean {
+    const normalized = text.toLowerCase().trim()
+      .replace(/[!?.,;:]+/g, '')  // Remove pontuação
+      .replace(/\s+/g, ' ');       // Normaliza espaços
+
+    // Verifica se é exatamente uma saudação
+    if (this.GREETINGS.includes(normalized)) {
+      return true;
+    }
+
+    // Verifica se começa com saudação e tem menos de 4 palavras
+    const words = normalized.split(' ');
+    if (words.length <= 3 && this.GREETINGS.includes(words[0])) {
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
    * Classifica a intenção da mensagem: query (busca), contact_info (cadastro) ou other
    */
   async classifyIntent(text: string): Promise<MessageIntent> {
     this.logger.log(`Classificando intenção: ${text.substring(0, 50)}...`);
+
+    // Primeiro verifica se é uma saudação simples (antes de chamar a IA)
+    if (this.isGreeting(text)) {
+      this.logger.log(`Mensagem identificada como saudação: "${text}"`);
+      return 'other';
+    }
+
+    // Mensagens muito curtas (menos de 10 caracteres) provavelmente não são dados de contato
+    if (text.trim().length < 10) {
+      this.logger.log(`Mensagem muito curta para ser dados de contato: "${text}"`);
+      return 'other';
+    }
 
     const client = await this.openaiService.getClient();
 
@@ -31,9 +77,11 @@ export class ExtractionService {
             role: 'system',
             content: `Classifique a intenção da mensagem:
 - "query": usuário quer BUSCAR informação sobre alguém (ex: "quem é João?", "o que sabe sobre Maria?", "me fala do Pedro", "conhece algum advogado?")
-- "contact_info": usuário está INFORMANDO dados de um contato para cadastrar (ex: "João, advogado, SP", "Conheci Maria no evento X, ela trabalha com marketing")
-- "update_contact": usuário quer ATUALIZAR dados de um contato existente (ex: "atualizar dados de João", "editar informações do Pedro", "corrigir o email da Maria", "mudar empresa do Carlos", "quero atualizar as informações de Mateus")
-- "other": saudação, agradecimento, ou mensagem sem relação com contatos
+- "contact_info": usuário está INFORMANDO dados de um contato para cadastrar. DEVE conter informações substanciais como: nome + empresa, nome + cargo, nome + contexto de como conheceu, etc. NÃO classifique como contact_info se for apenas um nome solto ou saudação.
+- "update_contact": usuário quer ATUALIZAR dados de um contato existente (ex: "atualizar dados de João", "editar informações do Pedro", "corrigir o email da Maria")
+- "other": saudação (oi, olá, bom dia), agradecimento, confirmação (ok, sim), ou mensagem sem informação de contato útil
+
+IMPORTANTE: Mensagens como "Olá", "Opa", "Oi tudo bem?", "Bom dia", apenas um nome sem contexto, ou saudações em geral são SEMPRE "other".
 
 Responda APENAS com: query, contact_info, update_contact ou other`,
           },
@@ -98,6 +146,33 @@ Responda APENAS com o nome ou termo de busca, sem pontuação ou explicações. 
   }
 
   /**
+   * Valida se o nome extraído é válido (não é saudação)
+   */
+  private isValidContactName(name: string | undefined): boolean {
+    if (!name) return false;
+
+    const normalized = name.toLowerCase().trim();
+
+    // Verifica se é uma saudação
+    if (this.GREETINGS.includes(normalized)) {
+      return false;
+    }
+
+    // Nome muito curto (menos de 2 caracteres)
+    if (normalized.length < 2) {
+      return false;
+    }
+
+    // Nome que parece ser uma saudação no início de uma frase
+    const firstWord = normalized.split(' ')[0];
+    if (this.GREETINGS.includes(firstWord) && normalized.split(' ').length <= 2) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
    * Extrai dados de contato simples (método original)
    */
   async extractContactData(text: string): Promise<ExtractionResult> {
@@ -147,6 +222,16 @@ Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`;
       const data: ExtractedContactData = JSON.parse(content);
 
       this.logger.log(`Dados extraídos: ${JSON.stringify(data)}`);
+
+      // Valida se o nome não é uma saudação
+      if (!this.isValidContactName(data.name)) {
+        this.logger.warn(`Nome inválido ou saudação detectada: "${data.name}"`);
+        return {
+          success: false,
+          data: {},
+          rawResponse: content,
+        };
+      }
 
       return {
         success: true,

@@ -245,14 +245,14 @@ export class WhatsappService {
       return { status: 'ignored', reason: 'no content' };
     }
 
-    // Salva a mensagem
+    // Salva a mensagem (não inclui pushName no content para evitar confusão na IA)
     const message = await this.prisma.whatsappMessage.create({
       data: {
         userId: userId,
         externalId: messageId,
         fromPhone: fromPhone,
         type: messageType,
-        content: pushName ? `[${pushName}] ${content}` : content,
+        content: content,
         audioUrl: audioUrl,
         approvalStatus: 'PENDING',
       },
