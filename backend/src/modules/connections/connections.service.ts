@@ -105,11 +105,12 @@ export class ConnectionsService {
   }
 
   /**
-   * Normaliza telefone removendo caracteres não numéricos
-   * e garantindo formato consistente para comparação
+   * Normaliza telefone para comparação
+   * Remove caracteres, adiciona código país e lida com 9º dígito
+   * Retorna array com variações possíveis para matching flexível
    */
-  private normalizePhone(phone: string | null): string | null {
-    if (!phone) return null;
+  private normalizePhoneVariations(phone: string | null): string[] {
+    if (!phone) return [];
 
     // Remove tudo que não é número
     let cleaned = phone.replace(/\D/g, '');
@@ -119,7 +120,25 @@ export class ConnectionsService {
       cleaned = '55' + cleaned;
     }
 
-    return cleaned || null;
+    if (!cleaned || cleaned.length < 12) return [];
+
+    const variations: string[] = [cleaned];
+
+    // Se tem 13 dígitos (55 + DDD + 9 + número), cria versão sem o 9
+    // Formato: 55 + DDD(2) + 9 + número(8) = 13 dígitos
+    if (cleaned.length === 13 && cleaned[4] === '9') {
+      const withoutNine = cleaned.slice(0, 4) + cleaned.slice(5);
+      variations.push(withoutNine);
+    }
+
+    // Se tem 12 dígitos (55 + DDD + número), cria versão com o 9
+    // Formato: 55 + DDD(2) + número(8) = 12 dígitos
+    if (cleaned.length === 12) {
+      const withNine = cleaned.slice(0, 4) + '9' + cleaned.slice(4);
+      variations.push(withNine);
+    }
+
+    return variations;
   }
 
   async getGraph(userId: string, depth = 2): Promise<GraphData> {
@@ -166,12 +185,12 @@ export class ConnectionsService {
       select: { id: true, phone: true },
     });
 
-    // Cria mapa de telefone normalizado -> userId
+    // Cria mapa de todas as variações de telefone -> userId
     const phoneToUserMap = new Map<string, string>();
     for (const u of allUsers) {
-      const normalizedPhone = this.normalizePhone(u.phone);
-      if (normalizedPhone) {
-        phoneToUserMap.set(normalizedPhone, u.id);
+      const phoneVariations = this.normalizePhoneVariations(u.phone);
+      for (const variation of phoneVariations) {
+        phoneToUserMap.set(variation, u.id);
       }
     }
 
@@ -202,8 +221,16 @@ export class ConnectionsService {
         // Se depth >= 2, busca conexões de 2º nível
         if (depth >= 2) {
           // 1. Verifica se o contato tem telefone que corresponde a um usuário
-          const contactPhone = this.normalizePhone(conn.contact.phone);
-          const linkedUserId = contactPhone ? phoneToUserMap.get(contactPhone) : null;
+          const contactPhoneVariations = this.normalizePhoneVariations(conn.contact.phone);
+          let linkedUserId: string | null = null;
+
+          // Procura match em qualquer variação do telefone
+          for (const variation of contactPhoneVariations) {
+            if (phoneToUserMap.has(variation)) {
+              linkedUserId = phoneToUserMap.get(variation)!;
+              break;
+            }
+          }
 
           if (linkedUserId) {
             // Busca os contatos desse usuário vinculado (2º nível)
