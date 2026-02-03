@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -120,6 +120,54 @@ export class AuthService {
     }
 
     return user;
+  }
+
+  async impersonate(adminId: string, targetUserId: string) {
+    // 1. Verificar se admin existe e é ADMIN
+    const admin = await this.prisma.user.findUnique({
+      where: { id: adminId },
+    });
+
+    if (!admin || admin.role !== 'ADMIN') {
+      throw new ForbiddenException('Apenas administradores podem impersonar usuários');
+    }
+
+    // 2. Buscar usuário alvo
+    const targetUser = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+    });
+
+    if (!targetUser) {
+      throw new NotFoundException('Usuário não encontrado');
+    }
+
+    // 3. Não permitir impersonar outros ADMINs
+    if (targetUser.role === 'ADMIN') {
+      throw new ForbiddenException('Não é permitido impersonar outros administradores');
+    }
+
+    // 4. Gerar token especial com flag de impersonação (expira em 1h)
+    const payload = {
+      sub: targetUser.id,
+      email: targetUser.email,
+      role: targetUser.role,
+      impersonatedBy: adminId,
+    };
+
+    const accessToken = this.jwtService.sign(payload, { expiresIn: '1h' });
+
+    return {
+      accessToken,
+      impersonating: {
+        id: targetUser.id,
+        name: targetUser.name,
+        email: targetUser.email,
+      },
+      admin: {
+        id: admin.id,
+        name: admin.name,
+      },
+    };
   }
 
   private async generateTokens(

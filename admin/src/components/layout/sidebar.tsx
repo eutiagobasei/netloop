@@ -14,6 +14,7 @@ import {
   Shield,
   User,
   UserPlus,
+  Users,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
@@ -22,6 +23,7 @@ type Environment = 'admin' | 'user'
 
 const adminNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
+  { name: 'Usuários', href: '/users', icon: Users },
   { name: 'API Keys', href: '/settings/api-keys', icon: Key },
   { name: 'Evolution API', href: '/settings/evolution', icon: MessageSquare },
   { name: 'Boas-vindas', href: '/settings/welcome', icon: UserPlus },

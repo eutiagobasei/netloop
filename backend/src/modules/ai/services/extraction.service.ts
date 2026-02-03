@@ -108,19 +108,22 @@ Responda APENAS com o nome ou termo de busca, sem pontuação ou explicações. 
     const systemPrompt = `Você é um assistente especializado em extrair informações de contatos profissionais de textos em português.
 
 Analise o texto fornecido e extraia as seguintes informações (se disponíveis):
-- name: Nome completo da pessoa
+- name: Nome completo da pessoa (IMPORTANTE: incluir nome E sobrenome exatamente como mencionado. Ex: "João Silva", "Maria Santos", não apenas "João")
 - company: Nome da empresa onde trabalha
 - position: Cargo ou função
 - phone: Número de telefone (formato brasileiro)
 - email: Endereço de email
 - location: Cidade, estado ou país
 - context: Um resumo de como/onde se conheceram ou o contexto do encontro
-- tags: Lista de palavras-chave relevantes para categorizar (ex: "investidor", "tecnologia", "startup", "mentor", etc)
+- tags: Lista de PONTOS DE CONEXÃO - inclua:
+  * Lugares, eventos, grupos ou comunidades onde se conheceram (ex: "Em Adoração", "SIPAT 2024", "Igreja São Paulo")
+  * Interesses e áreas de atuação profissional (ex: "investidor", "tecnologia", "podcast")
 
 IMPORTANTE:
 - Se uma informação não estiver clara no texto, não invente. Deixe o campo vazio ou null.
 - O campo "context" deve ser um resumo útil do encontro/conversa.
-- Tags devem ser palavras simples e relevantes para networking profissional.
+- Tags devem priorizar ONDE/COMO se conheceram (pontos de conexão), seguido de interesses.
+- Capture o nome EXATAMENTE como mencionado, incluindo sobrenome.
 
 Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`;
 
@@ -174,18 +177,18 @@ Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`;
 Esquema:
 {
   "contact": {
-    "name": "string (nome completo)",
+    "name": "string (nome completo COM sobrenome, exatamente como mencionado)",
     "phone": "string|null (telefone formato brasileiro)",
     "email": "string|null",
     "company": "string|null (empresa)",
     "position": "string|null (cargo)",
     "location": "string|null (cidade/estado)",
-    "tags": ["string"] (palavras-chave: eventos, interesses, áreas),
+    "tags": ["string"] (PONTOS DE CONEXÃO: lugares, eventos, grupos onde se conheceram + interesses. Ex: ["Em Adoração", "podcast", "investidor"]),
     "context": "string (resumo do encontro/conversa)"
   },
   "connections": [
     {
-      "name": "string (nome da pessoa mencionada)",
+      "name": "string (nome completo da pessoa mencionada)",
       "about": "string (descrição/contexto sobre ela)",
       "tags": ["string"],
       "phone": "string|null"
@@ -195,8 +198,9 @@ Esquema:
 
 Regras:
 - O "contact" é a pessoa PRINCIPAL sobre quem o texto fala
+- NOME: Capture exatamente como mencionado, incluindo sobrenome (ex: "Ianne Higino", não "Ianne")
+- TAGS: Priorize PONTOS DE CONEXÃO (onde/como se conheceram) + interesses profissionais
 - "connections" são OUTRAS pessoas mencionadas que o contact conhece ou indicou
-- Tags: eventos, interesses, áreas de atuação profissional
 - Se não houver conexões mencionadas, retorne connections: []
 - NÃO invente dados que não estejam explícitos no texto
 - Campos ausentes devem ser null ou array vazio`;

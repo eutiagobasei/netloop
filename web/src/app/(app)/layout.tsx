@@ -1,10 +1,15 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useAuth } from '@/hooks/use-auth'
 import { LogOut, Network } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import {
+  ImpersonationBanner,
+  getImpersonationData,
+  exitImpersonation,
+} from '@/components/impersonation-banner'
 
 export default function AppLayout({
   children,
@@ -13,6 +18,14 @@ export default function AppLayout({
 }) {
   const router = useRouter()
   const { user, isLoading, isAuthenticated, logout } = useAuth()
+  const [impersonation, setImpersonation] = useState<{
+    isImpersonating: boolean
+    userName?: string
+  }>({ isImpersonating: false })
+
+  useEffect(() => {
+    setImpersonation(getImpersonationData())
+  }, [])
 
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
@@ -34,6 +47,12 @@ export default function AppLayout({
 
   return (
     <div className="flex h-screen flex-col">
+      {impersonation.isImpersonating && impersonation.userName && (
+        <ImpersonationBanner
+          userName={impersonation.userName}
+          onExit={exitImpersonation}
+        />
+      )}
       <header className="flex h-16 items-center justify-between border-b bg-white px-6">
         <div className="flex items-center gap-2">
           <Network className="h-6 w-6 text-primary-600" />

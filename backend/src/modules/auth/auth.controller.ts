@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Body, UseGuards, HttpCode, HttpStatus } from '@nestjs/common';
+import { Controller, Post, Get, Body, UseGuards, HttpCode, HttpStatus, Param } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -6,7 +6,9 @@ import { LoginDto } from './dto/login.dto';
 import { RefreshTokenDto } from './dto/refresh-token.dto';
 import { TokensDto } from './dto/tokens.dto';
 import { JwtAuthGuard } from './guards/jwt-auth.guard';
+import { RolesGuard } from './guards/roles.guard';
 import { CurrentUser } from './decorators/current-user.decorator';
+import { Roles } from './decorators/roles.decorator';
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -61,5 +63,21 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Não autenticado' })
   async me(@CurrentUser('id') userId: string) {
     return this.authService.getProfile(userId);
+  }
+
+  @Post('impersonate/:userId')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiBearerAuth()
+  @ApiOperation({ summary: 'Impersonar um usuário (apenas ADMIN)' })
+  @ApiResponse({ status: 200, description: 'Token de impersonação gerado com sucesso' })
+  @ApiResponse({ status: 403, description: 'Sem permissão para impersonar' })
+  @ApiResponse({ status: 404, description: 'Usuário não encontrado' })
+  async impersonate(
+    @CurrentUser('id') adminId: string,
+    @Param('userId') targetUserId: string,
+  ) {
+    return this.authService.impersonate(adminId, targetUserId);
   }
 }
