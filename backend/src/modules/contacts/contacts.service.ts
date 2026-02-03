@@ -430,7 +430,7 @@ export class ContactsService {
         id, name, company, position, location, context, phone, email,
         1 - (embedding <=> ${embedding}::vector) as similarity
       FROM contacts
-      WHERE owner_id = ${ownerId} AND embedding IS NOT NULL
+      WHERE "ownerId" = ${ownerId} AND embedding IS NOT NULL
       ORDER BY embedding <=> ${embedding}::vector
       LIMIT ${limit}
     `;
