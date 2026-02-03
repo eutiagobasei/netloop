@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { ConnectionStrength } from '@prisma/client';
 import { CreateConnectionDto } from './dto/create-connection.dto';
@@ -7,6 +7,8 @@ import { GraphData, GraphNode, GraphEdge } from './types/graph.types';
 
 @Injectable()
 export class ConnectionsService {
+  private readonly logger = new Logger(ConnectionsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateConnectionDto) {
@@ -189,12 +191,12 @@ export class ConnectionsService {
     const phoneToUserMap = new Map<string, string>();
     for (const u of allUsers) {
       const phoneVariations = this.normalizePhoneVariations(u.phone);
-      console.log(`[GRAPH DEBUG] User ${u.id} phone variations:`, phoneVariations);
+      this.logger.log(`User ${u.id} phone variations: ${JSON.stringify(phoneVariations)}`);
       for (const variation of phoneVariations) {
         phoneToUserMap.set(variation, u.id);
       }
     }
-    console.log(`[GRAPH DEBUG] Phone map size: ${phoneToUserMap.size}`);
+    this.logger.log(`Phone map size: ${phoneToUserMap.size}, keys: ${Array.from(phoneToUserMap.keys()).join(', ')}`);
 
     for (const conn of firstDegreeConnections) {
       if (!visitedIds.has(conn.contactId)) {
@@ -224,15 +226,15 @@ export class ConnectionsService {
         if (depth >= 2) {
           // 1. Verifica se o contato tem telefone que corresponde a um usuário
           const contactPhoneVariations = this.normalizePhoneVariations(conn.contact.phone);
-          console.log(`[GRAPH DEBUG] Contact ${conn.contact.name} phone: ${conn.contact.phone} -> variations:`, contactPhoneVariations);
+          this.logger.log(`Contact ${conn.contact.name} phone: ${conn.contact.phone} -> variations: ${JSON.stringify(contactPhoneVariations)}`);
           let linkedUserId: string | null = null;
 
           // Procura match em qualquer variação do telefone
           for (const variation of contactPhoneVariations) {
-            console.log(`[GRAPH DEBUG] Checking variation ${variation}, exists in map: ${phoneToUserMap.has(variation)}`);
+            this.logger.log(`Checking variation ${variation}, exists in map: ${phoneToUserMap.has(variation)}`);
             if (phoneToUserMap.has(variation)) {
               linkedUserId = phoneToUserMap.get(variation)!;
-              console.log(`[GRAPH DEBUG] MATCH! Linked to user ${linkedUserId}`);
+              this.logger.log(`MATCH! Contact linked to user ${linkedUserId}`);
               break;
             }
           }
