@@ -10,15 +10,28 @@ export class TranscriptionService {
 
   constructor(private readonly openaiService: OpenAIService) {}
 
+  /**
+   * Transcreve áudio a partir de uma URL (método legado)
+   */
   async transcribeAudio(audioUrl: string): Promise<string> {
-    this.logger.log(`Transcrevendo áudio: ${audioUrl}`);
-
-    const client = await this.openaiService.getClient();
+    this.logger.log(`Transcrevendo áudio de URL: ${audioUrl}`);
 
     // Download do áudio
     const audioBuffer = await this.downloadAudio(audioUrl);
 
+    return this.transcribeFromBuffer(audioBuffer);
+  }
+
+  /**
+   * Transcreve áudio a partir de um Buffer (preferido)
+   */
+  async transcribeFromBuffer(audioBuffer: Buffer): Promise<string> {
+    this.logger.log(`Transcrevendo áudio de buffer: ${audioBuffer.length} bytes`);
+
+    const client = await this.openaiService.getClient();
+
     // Salvar temporariamente (OpenAI SDK precisa de um arquivo)
+    // Usa .ogg que é o formato padrão do WhatsApp
     const tempPath = path.join(os.tmpdir(), `audio_${Date.now()}.ogg`);
     fs.writeFileSync(tempPath, audioBuffer);
 

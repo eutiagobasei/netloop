@@ -110,22 +110,25 @@ export class WhatsappService {
       messageType = MessageType.IMAGE;
     }
 
+    // Guarda a messageKey para download de mídia via Evolution API
+    const messageKey = data.key;
+
     // NOVO: Verifica se o telefone pertence a um usuário cadastrado
     const user = await this.usersService.findByPhone(fromPhone);
 
     if (!user) {
       // Usuário NÃO cadastrado - verificar/iniciar fluxo de registro
-      return this.handleUnknownUser(fromPhone, content, audioUrl, messageType);
+      return this.handleUnknownUser(fromPhone, content, audioUrl, messageType, messageKey);
     }
 
     // Verifica se existe fluxo de registro ativo (para completar)
     const activeFlow = await this.registrationService.getActiveFlow(fromPhone);
     if (activeFlow) {
-      // Se for áudio, transcreve primeiro
+      // Se for áudio, transcreve primeiro usando Evolution API
       let messageContent = content;
-      if (messageType === MessageType.AUDIO && audioUrl) {
+      if (messageType === MessageType.AUDIO && messageKey) {
         try {
-          messageContent = await this.aiService.transcribeAudio(audioUrl);
+          messageContent = await this.transcribeAudioViaEvolution(messageKey);
           this.logger.log(`Áudio transcrito no fluxo de registro: ${messageContent?.substring(0, 50)}...`);
         } catch (error) {
           this.logger.error(`Erro ao transcrever áudio no registro: ${error.message}`);
@@ -147,7 +150,7 @@ export class WhatsappService {
     }
 
     // Usuário cadastrado - processar mensagem normalmente
-    return this.processUserMessage(user.id, fromPhone, pushName, content, audioUrl, messageType, messageId);
+    return this.processUserMessage(user.id, fromPhone, pushName, content, audioUrl, messageType, messageId, messageKey);
   }
 
   /**
@@ -157,17 +160,18 @@ export class WhatsappService {
     phone: string,
     content: string | null,
     audioUrl?: string,
-    messageType?: MessageType
+    messageType?: MessageType,
+    messageKey?: any
   ) {
     // Verifica se já existe fluxo de registro ativo
     const activeFlow = await this.registrationService.getActiveFlow(phone);
 
     if (activeFlow) {
-      // Se for áudio, transcreve primeiro
+      // Se for áudio, transcreve primeiro usando Evolution API
       let messageContent = content;
-      if (messageType === MessageType.AUDIO && audioUrl) {
+      if (messageType === MessageType.AUDIO && messageKey) {
         try {
-          messageContent = await this.aiService.transcribeAudio(audioUrl);
+          messageContent = await this.transcribeAudioViaEvolution(messageKey);
           this.logger.log(`Áudio transcrito no registro (unknown): ${messageContent?.substring(0, 50)}...`);
         } catch (error) {
           this.logger.error(`Erro ao transcrever áudio no registro: ${error.message}`);
@@ -221,6 +225,7 @@ export class WhatsappService {
     audioUrl: string | undefined,
     messageType: MessageType,
     messageId: string,
+    messageKey?: any,
   ) {
     // Verifica se é uma resposta de aprovação
     const pendingMessage = await this.findPendingApproval(userId, fromPhone);
@@ -256,7 +261,7 @@ export class WhatsappService {
     this.logger.log(`Mensagem salva: ${message.id} de ${fromPhone} para usuário ${userId}`);
 
     // Processa com IA de forma assíncrona
-    this.processMessageWithAI(message.id, messageType, fromPhone);
+    this.processMessageWithAI(message.id, messageType, fromPhone, messageKey);
 
     return {
       status: 'received',
@@ -385,7 +390,7 @@ export class WhatsappService {
     }
   }
 
-  async processMessageWithAI(messageId: string, type: MessageType, fromPhone: string) {
+  async processMessageWithAI(messageId: string, type: MessageType, fromPhone: string, messageKey?: any) {
     this.logger.log(`Processando mensagem ${messageId} com IA`);
 
     const message = await this.prisma.whatsappMessage.findUnique({
@@ -407,10 +412,10 @@ export class WhatsappService {
       let transcription: string | null = null;
       let extractedData: any = null;
 
-      // Se for áudio, transcrever
-      if (type === MessageType.AUDIO && message.audioUrl) {
-        this.logger.log(`Transcrevendo áudio: ${messageId}`);
-        transcription = await this.aiService.transcribeAudio(message.audioUrl);
+      // Se for áudio, transcrever via Evolution API
+      if (type === MessageType.AUDIO && messageKey) {
+        this.logger.log(`Transcrevendo áudio via Evolution: ${messageId}`);
+        transcription = await this.transcribeAudioViaEvolution(messageKey);
       } else if (type === MessageType.TEXT && message.content) {
         transcription = message.content;
       }
@@ -613,6 +618,31 @@ export class WhatsappService {
     message += `_Exemplo: "email: novo@email.com, empresa: Nova Empresa"_`;
 
     await this.evolutionService.sendTextMessage(toPhone, message);
+  }
+
+  // ============================================
+  // TRANSCRIÇÃO DE ÁUDIO VIA EVOLUTION API
+  // ============================================
+
+  /**
+   * Transcreve áudio baixando via Evolution API (descriptografado)
+   */
+  private async transcribeAudioViaEvolution(messageKey: any): Promise<string> {
+    this.logger.log(`Baixando áudio via Evolution API...`);
+
+    // Baixa o áudio descriptografado via Evolution API
+    const audioBuffer = await this.evolutionService.downloadMedia(messageKey, 'audio');
+
+    if (!audioBuffer) {
+      throw new Error('Falha ao baixar áudio via Evolution API');
+    }
+
+    this.logger.log(`Áudio baixado: ${audioBuffer.length} bytes. Transcrevendo...`);
+
+    // Transcreve usando OpenAI Whisper
+    const transcription = await this.aiService.transcribeFromBuffer(audioBuffer);
+
+    return transcription;
   }
 
   // ============================================

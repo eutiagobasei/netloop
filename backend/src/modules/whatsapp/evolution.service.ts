@@ -146,6 +146,58 @@ export class EvolutionService {
   }
 
   /**
+   * Baixa mídia (áudio/imagem/vídeo) usando a Evolution API
+   * Retorna o buffer do arquivo descriptografado
+   */
+  async downloadMedia(messageKey: any, messageType: 'audio' | 'image' | 'video' | 'document' = 'audio'): Promise<Buffer | null> {
+    try {
+      const { apiUrl, apiKey, instanceName } = await this.getCredentials();
+      if (!apiUrl || !apiKey || !instanceName) {
+        this.logger.warn('Evolution API não configurada completamente');
+        return null;
+      }
+
+      this.logger.log(`Baixando mídia tipo ${messageType} via Evolution API`);
+
+      const response = await fetch(`${apiUrl}/chat/getBase64FromMediaMessage/${instanceName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: apiKey,
+        },
+        body: JSON.stringify({
+          message: {
+            key: messageKey,
+          },
+          convertToMp4: false,
+        }),
+      });
+
+      if (!response.ok) {
+        const error = await response.text();
+        this.logger.error(`Erro ao baixar mídia: ${response.status} - ${error}`);
+        return null;
+      }
+
+      const data = await response.json();
+
+      if (data.base64) {
+        // Remove prefixo data:audio/ogg;base64, se existir
+        const base64Data = data.base64.replace(/^data:[^;]+;base64,/, '');
+        const buffer = Buffer.from(base64Data, 'base64');
+        this.logger.log(`Mídia baixada com sucesso: ${buffer.length} bytes`);
+        return buffer;
+      }
+
+      this.logger.error('Resposta da Evolution não contém base64');
+      return null;
+    } catch (error) {
+      this.logger.error('Erro ao baixar mídia:', error);
+      return null;
+    }
+  }
+
+  /**
    * Envia mensagem de vídeo
    */
   async sendVideoMessage(

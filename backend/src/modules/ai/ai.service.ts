@@ -28,10 +28,17 @@ export class AIService {
   }
 
   /**
-   * Transcreve um áudio usando Whisper
+   * Transcreve um áudio usando Whisper (a partir de URL)
    */
   async transcribeAudio(audioUrl: string): Promise<string> {
     return this.transcriptionService.transcribeAudio(audioUrl);
+  }
+
+  /**
+   * Transcreve um áudio usando Whisper (a partir de Buffer)
+   */
+  async transcribeFromBuffer(audioBuffer: Buffer): Promise<string> {
+    return this.transcriptionService.transcribeFromBuffer(audioBuffer);
   }
 
   /**
