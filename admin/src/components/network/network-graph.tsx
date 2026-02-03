@@ -104,6 +104,7 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
   const nodeCanvasObject = useCallback(
     (node: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
       const degree = node.degree as number
+      const nodeType = node.type as string
       const color = NODE_COLORS[degree as keyof typeof NODE_COLORS] || '#9CA3AF'
       const size = NODE_SIZES[degree as keyof typeof NODE_SIZES] || 10
       const isSelected = node.id === selectedNodeId
@@ -121,14 +122,17 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
         ctx.stroke()
       }
 
-      // Label
-      const label = degree === 0 ? 'Voce' : node.name
-      const fontSize = Math.max(10 / globalScale, 3)
-      ctx.font = `${fontSize}px Sans-Serif`
-      ctx.textAlign = 'center'
-      ctx.textBaseline = 'top'
-      ctx.fillStyle = '#374151'
-      ctx.fillText(label, node.x, node.y + size / 2 + 2)
+      // Label - nao mostra nome para nos de 2o nivel (mentioned)
+      // So mostra para o usuario central e contatos de 1o nivel
+      if (degree === 0 || (degree === 1 && nodeType !== 'mentioned')) {
+        const label = degree === 0 ? 'Voce' : node.name
+        const fontSize = Math.max(10 / globalScale, 3)
+        ctx.font = `${fontSize}px Sans-Serif`
+        ctx.textAlign = 'center'
+        ctx.textBaseline = 'top'
+        ctx.fillStyle = '#374151'
+        ctx.fillText(label, node.x, node.y + size / 2 + 2)
+      }
     },
     [selectedNodeId]
   )

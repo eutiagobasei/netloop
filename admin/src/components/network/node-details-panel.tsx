@@ -1,6 +1,6 @@
 'use client'
 
-import { X, Building2, Briefcase, Tag, Users } from 'lucide-react'
+import { X, Building2, Briefcase, Tag, Users, FileText } from 'lucide-react'
 import { GraphNode } from '@/lib/api'
 
 interface NodeDetailsPanelProps {
@@ -67,6 +67,16 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
           </div>
         )}
 
+        {node.description && (
+          <div className="flex items-start gap-2">
+            <FileText className="h-4 w-4 mt-0.5 text-gray-400" />
+            <div>
+              <p className="text-sm font-medium text-gray-700">Descricao</p>
+              <p className="text-sm text-gray-600">{node.description}</p>
+            </div>
+          </div>
+        )}
+
         {node.tags && node.tags.length > 0 && (
           <div className="flex items-start gap-2">
             <Tag className="h-4 w-4 mt-0.5 text-gray-400" />
@@ -94,6 +104,14 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
           <div className="mt-6 rounded-lg bg-green-50 p-3">
             <p className="text-sm text-green-800">
               Este e voce! O centro da sua rede de conexoes.
+            </p>
+          </div>
+        )}
+
+        {node.type === 'mentioned' && (
+          <div className="mt-6 rounded-lg bg-gray-50 p-3">
+            <p className="text-sm text-gray-700">
+              Esta pessoa foi mencionada por um dos seus contatos diretos.
             </p>
           </div>
         )}

@@ -107,7 +107,7 @@ export class ConnectionsService {
   async getGraph(userId: string, depth = 2): Promise<GraphData> {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
-    const visitedContacts = new Set<string>();
+    const visitedIds = new Set<string>();
 
     // Adiciona o usuário como nó central
     const user = await this.prisma.user.findUnique({
@@ -125,7 +125,7 @@ export class ConnectionsService {
       degree: 0,
     });
 
-    // Busca conexões de 1º grau
+    // Busca conexões de 1º grau (contatos diretos do usuário)
     const firstDegreeConnections = await this.prisma.connection.findMany({
       where: { fromUserId: userId },
       include: {
@@ -136,14 +136,15 @@ export class ConnectionsService {
                 tag: true,
               },
             },
+            mentionedConnections: true, // Inclui as conexões mencionadas
           },
         },
       },
     });
 
     for (const conn of firstDegreeConnections) {
-      if (!visitedContacts.has(conn.contactId)) {
-        visitedContacts.add(conn.contactId);
+      if (!visitedIds.has(conn.contactId)) {
+        visitedIds.add(conn.contactId);
 
         nodes.push({
           id: conn.contactId,
@@ -164,95 +165,33 @@ export class ConnectionsService {
           target: conn.contactId,
           strength: conn.strength,
         });
-      }
-    }
 
-    // Se depth >= 2, busca conexões de 2º grau
-    if (depth >= 2) {
-      // Busca outros usuários que têm conexões com os mesmos contatos
-      const contactIds = Array.from(visitedContacts);
+        // Se depth >= 2, adiciona as conexões mencionadas (2º nível)
+        if (depth >= 2 && conn.contact.mentionedConnections.length > 0) {
+          for (const mentioned of conn.contact.mentionedConnections) {
+            const mentionedNodeId = `mentioned-${mentioned.id}`;
 
-      if (contactIds.length > 0) {
-        // Busca conexões de outros usuários com os mesmos contatos
-        const secondDegreeData = await this.prisma.connection.findMany({
-          where: {
-            contactId: { in: contactIds },
-            fromUserId: { not: userId },
-          },
-          include: {
-            fromUser: true,
-            contact: {
-              include: {
-                tags: {
-                  include: {
-                    tag: true,
-                  },
-                },
-              },
-            },
-          },
-        });
+            if (!visitedIds.has(mentionedNodeId)) {
+              visitedIds.add(mentionedNodeId);
 
-        // Mapeia contatos de 2º grau (contatos dos contatos do usuário)
-        const secondaryUserIds = new Set<string>();
+              nodes.push({
+                id: mentionedNodeId,
+                name: mentioned.name,
+                type: 'mentioned',
+                degree: 2,
+                tags: mentioned.tags.map((tagName) => ({
+                  id: tagName,
+                  name: tagName,
+                  color: '#9ca3af', // Cor cinza para tags de mencionados
+                })),
+                description: mentioned.description,
+              });
 
-        for (const conn of secondDegreeData) {
-          if (!secondaryUserIds.has(conn.fromUserId)) {
-            secondaryUserIds.add(conn.fromUserId);
-
-            // Busca os contatos desse usuário secundário
-            const theirConnections = await this.prisma.connection.findMany({
-              where: {
-                fromUserId: conn.fromUserId,
-                contactId: { notIn: contactIds },
-              },
-              include: {
-                contact: {
-                  include: {
-                    tags: {
-                      include: {
-                        tag: true,
-                      },
-                    },
-                  },
-                },
-              },
-              take: 10, // Limita para não sobrecarregar o grafo
-            });
-
-            for (const theirConn of theirConnections) {
-              if (!visitedContacts.has(theirConn.contactId)) {
-                visitedContacts.add(theirConn.contactId);
-
-                nodes.push({
-                  id: theirConn.contactId,
-                  name: theirConn.contact.name,
-                  type: 'contact',
-                  degree: 2,
-                  tags: theirConn.contact.tags.map((ct) => ({
-                    id: ct.tag.id,
-                    name: ct.tag.name,
-                    color: ct.tag.color,
-                  })),
-                  company: theirConn.contact.company,
-                  position: theirConn.contact.position,
-                });
-
-                // A aresta conecta através do contato em comum
-                const commonContactId = contactIds.find((cid) =>
-                  secondDegreeData.some(
-                    (sd) => sd.fromUserId === conn.fromUserId && sd.contactId === cid,
-                  ),
-                );
-
-                if (commonContactId) {
-                  edges.push({
-                    source: commonContactId,
-                    target: theirConn.contactId,
-                    strength: theirConn.strength,
-                  });
-                }
-              }
+              edges.push({
+                source: conn.contactId,
+                target: mentionedNodeId,
+                strength: 'WEAK' as ConnectionStrength,
+              });
             }
           }
         }
