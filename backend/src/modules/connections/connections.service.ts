@@ -104,6 +104,24 @@ export class ConnectionsService {
     });
   }
 
+  /**
+   * Normaliza telefone removendo caracteres não numéricos
+   * e garantindo formato consistente para comparação
+   */
+  private normalizePhone(phone: string | null): string | null {
+    if (!phone) return null;
+
+    // Remove tudo que não é número
+    let cleaned = phone.replace(/\D/g, '');
+
+    // Se não começa com 55, adiciona
+    if (!cleaned.startsWith('55') && cleaned.length >= 10) {
+      cleaned = '55' + cleaned;
+    }
+
+    return cleaned || null;
+  }
+
   async getGraph(userId: string, depth = 2): Promise<GraphData> {
     const nodes: GraphNode[] = [];
     const edges: GraphEdge[] = [];
@@ -136,11 +154,26 @@ export class ConnectionsService {
                 tag: true,
               },
             },
-            mentionedConnections: true, // Inclui as conexões mencionadas
+            mentionedConnections: true,
           },
         },
       },
     });
+
+    // Busca todos os usuários para vincular por telefone
+    const allUsers = await this.prisma.user.findMany({
+      where: { id: { not: userId } },
+      select: { id: true, phone: true },
+    });
+
+    // Cria mapa de telefone normalizado -> userId
+    const phoneToUserMap = new Map<string, string>();
+    for (const u of allUsers) {
+      const normalizedPhone = this.normalizePhone(u.phone);
+      if (normalizedPhone) {
+        phoneToUserMap.set(normalizedPhone, u.id);
+      }
+    }
 
     for (const conn of firstDegreeConnections) {
       if (!visitedIds.has(conn.contactId)) {
@@ -166,8 +199,56 @@ export class ConnectionsService {
           strength: conn.strength,
         });
 
-        // Se depth >= 2, adiciona as conexões mencionadas (2º nível)
-        if (depth >= 2 && conn.contact.mentionedConnections.length > 0) {
+        // Se depth >= 2, busca conexões de 2º nível
+        if (depth >= 2) {
+          // 1. Verifica se o contato tem telefone que corresponde a um usuário
+          const contactPhone = this.normalizePhone(conn.contact.phone);
+          const linkedUserId = contactPhone ? phoneToUserMap.get(contactPhone) : null;
+
+          if (linkedUserId) {
+            // Busca os contatos desse usuário vinculado (2º nível)
+            const linkedUserContacts = await this.prisma.connection.findMany({
+              where: { fromUserId: linkedUserId },
+              include: {
+                contact: {
+                  include: {
+                    tags: { include: { tag: true } },
+                  },
+                },
+              },
+              take: 20, // Limita para não sobrecarregar
+            });
+
+            for (const linkedConn of linkedUserContacts) {
+              const secondDegreeId = `linked-${linkedConn.contactId}`;
+
+              if (!visitedIds.has(secondDegreeId) && !visitedIds.has(linkedConn.contactId)) {
+                visitedIds.add(secondDegreeId);
+
+                nodes.push({
+                  id: secondDegreeId,
+                  name: linkedConn.contact.name,
+                  type: 'mentioned',
+                  degree: 2,
+                  tags: linkedConn.contact.tags.map((ct) => ({
+                    id: ct.tag.id,
+                    name: ct.tag.name,
+                    color: ct.tag.color,
+                  })),
+                  company: linkedConn.contact.company,
+                  position: linkedConn.contact.position,
+                });
+
+                edges.push({
+                  source: conn.contactId,
+                  target: secondDegreeId,
+                  strength: 'WEAK' as ConnectionStrength,
+                });
+              }
+            }
+          }
+
+          // 2. Também adiciona MentionedConnections (pessoas mencionadas manualmente)
           for (const mentioned of conn.contact.mentionedConnections) {
             const mentionedNodeId = `mentioned-${mentioned.id}`;
 
@@ -182,7 +263,7 @@ export class ConnectionsService {
                 tags: mentioned.tags.map((tagName) => ({
                   id: tagName,
                   name: tagName,
-                  color: '#9ca3af', // Cor cinza para tags de mencionados
+                  color: '#9ca3af',
                 })),
                 description: mentioned.description,
               });
