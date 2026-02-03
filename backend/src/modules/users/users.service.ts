@@ -95,13 +95,15 @@ export class UsersService {
     });
   }
 
-  async findAll(page = 1, limit = 20) {
-    const skip = (page - 1) * limit;
+  async findAll(page: number | string = 1, limit: number | string = 20) {
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 20;
+    const skip = (pageNum - 1) * limitNum;
 
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         skip,
-        take: limit,
+        take: limitNum,
         select: {
           id: true,
           email: true,
@@ -125,9 +127,9 @@ export class UsersService {
       data: users,
       meta: {
         total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
+        page: pageNum,
+        limit: limitNum,
+        totalPages: Math.ceil(total / limitNum),
       },
     };
   }
