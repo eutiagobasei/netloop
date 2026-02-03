@@ -7,7 +7,7 @@ import {
   MentionedConnectionData,
 } from '../dto/extracted-contact.dto';
 
-export type MessageIntent = 'query' | 'contact_info' | 'other';
+export type MessageIntent = 'query' | 'contact_info' | 'update_contact' | 'other';
 
 @Injectable()
 export class ExtractionService {
@@ -32,9 +32,10 @@ export class ExtractionService {
             content: `Classifique a intenção da mensagem:
 - "query": usuário quer BUSCAR informação sobre alguém (ex: "quem é João?", "o que sabe sobre Maria?", "me fala do Pedro", "conhece algum advogado?")
 - "contact_info": usuário está INFORMANDO dados de um contato para cadastrar (ex: "João, advogado, SP", "Conheci Maria no evento X, ela trabalha com marketing")
+- "update_contact": usuário quer ATUALIZAR dados de um contato existente (ex: "atualizar dados de João", "editar informações do Pedro", "corrigir o email da Maria", "mudar empresa do Carlos", "quero atualizar as informações de Mateus")
 - "other": saudação, agradecimento, ou mensagem sem relação com contatos
 
-Responda APENAS com: query, contact_info ou other`,
+Responda APENAS com: query, contact_info, update_contact ou other`,
           },
           { role: 'user', content: text },
         ],
@@ -43,7 +44,7 @@ Responda APENAS com: query, contact_info ou other`,
       });
 
       const intent = response.choices[0]?.message?.content?.trim().toLowerCase();
-      const validIntent = ['query', 'contact_info', 'other'].includes(intent || '')
+      const validIntent = ['query', 'contact_info', 'update_contact', 'other'].includes(intent || '')
         ? (intent as MessageIntent)
         : 'other';
 

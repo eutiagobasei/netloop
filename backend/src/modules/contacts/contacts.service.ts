@@ -513,8 +513,9 @@ export class ContactsService {
   /**
    * Busca contato por nome com normalização (encontra variações)
    * Mateus encontra Matheus, Joao encontra João, etc.
+   * PUBLIC: usado pelo WhatsappService para update_contact
    */
-  private async searchByNameNormalized(ownerId: string, searchName: string) {
+  async searchByNameNormalized(ownerId: string, searchName: string) {
     const normalizedSearch = this.normalizeString(searchName);
     this.logger.log(`Busca normalizada: "${searchName}" → "${normalizedSearch}"`);
 

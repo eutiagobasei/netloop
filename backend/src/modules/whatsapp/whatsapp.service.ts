@@ -11,9 +11,15 @@ import { UsersService } from '../users/users.service';
 // Timeout para auto-aprovar (2 minutos)
 const AUTO_APPROVE_TIMEOUT_MS = 2 * 60 * 1000;
 
+// Timeout para expirar estado de atualização (5 minutos)
+const UPDATE_STATE_TIMEOUT_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
+
+  // Estado de atualização pendente: Map<phone, { contactId, contactName, timestamp }>
+  private pendingUpdates = new Map<string, { contactId: string; contactName: string; timestamp: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -181,6 +187,12 @@ export class WhatsappService {
     const pendingMessage = await this.findPendingApproval(userId, fromPhone);
     if (pendingMessage && content) {
       return this.handleApprovalResponse(pendingMessage, content.toLowerCase().trim());
+    }
+
+    // Verifica se há atualização de contato pendente
+    const pendingUpdate = this.getPendingUpdate(fromPhone);
+    if (pendingUpdate && content) {
+      return this.handleUpdateResponse(userId, fromPhone, pendingUpdate, content, messageId);
     }
 
     // Se não tem conteúdo e é texto, ignora
@@ -403,7 +415,52 @@ export class WhatsappService {
         return;
       }
 
-      // 3. SE FOR CONTACT_INFO → FLUXO DE CADASTRO
+      // 3. SE FOR UPDATE_CONTACT → FLUXO DE ATUALIZAÇÃO
+      if (intent === 'update_contact') {
+        const contactName = await this.aiService.extractQuerySubject(transcription);
+
+        if (contactName) {
+          const existingContact = await this.contactsService.searchByNameNormalized(
+            message.userId,
+            contactName
+          );
+
+          if (existingContact) {
+            // Encontrou o contato - salva estado de atualização pendente
+            this.setPendingUpdate(fromPhone, existingContact.id, existingContact.name);
+
+            // Mostra dados atuais e pede novas informações
+            await this.sendUpdatePrompt(fromPhone, existingContact);
+          } else {
+            // Não encontrou - pergunta qual contato
+            await this.evolutionService.sendTextMessage(
+              fromPhone,
+              `🤔 Não encontrei *${contactName}* na sua rede.\n\nQual contato você quer atualizar?`
+            );
+          }
+        } else {
+          // Não conseguiu extrair o nome
+          await this.evolutionService.sendTextMessage(
+            fromPhone,
+            '🤔 Não entendi qual contato você quer atualizar. Pode me dizer o nome da pessoa?'
+          );
+        }
+
+        // Atualiza a mensagem como processada
+        await this.prisma.whatsappMessage.update({
+          where: { id: messageId },
+          data: {
+            transcription,
+            processed: true,
+            processedAt: new Date(),
+            approvalStatus: 'APPROVED',
+          },
+        });
+
+        this.logger.log(`Update contact processado para ${messageId}: ${contactName || 'nome não identificado'}`);
+        return;
+      }
+
       if (intent === 'contact_info') {
         this.logger.log(`Extraindo dados do texto: ${messageId}`);
         const extraction = await this.aiService.extractContactData(transcription);
@@ -485,6 +542,176 @@ export class WhatsappService {
     }
 
     await this.evolutionService.sendTextMessage(toPhone, responseText);
+  }
+
+  /**
+   * Envia prompt para atualização de contato existente
+   */
+  private async sendUpdatePrompt(toPhone: string, contact: any) {
+    let message = `📝 *Atualizar: ${contact.name}*\n\n`;
+    message += `*Dados atuais:*\n`;
+
+    if (contact.company) message += `🏢 Empresa: ${contact.company}\n`;
+    if (contact.position) message += `💼 Cargo: ${contact.position}\n`;
+    if (contact.phone) message += `📱 Telefone: ${contact.phone}\n`;
+    if (contact.email) message += `📧 Email: ${contact.email}\n`;
+    if (contact.location) message += `📍 Local: ${contact.location}\n`;
+    if (contact.notes) message += `📋 Notas: ${contact.notes}\n`;
+
+    // Extrai tags do contato (pode vir como array de objetos ou já formatado)
+    const tags = contact.tags;
+    if (tags && tags.length > 0) {
+      const tagNames = tags.map((t: any) => t.tag?.name || t.name || t).filter(Boolean);
+      if (tagNames.length > 0) {
+        message += `\n🏷️ *Pontos de conexão:* ${tagNames.join(', ')}\n`;
+      }
+    }
+
+    if (contact.context) message += `\n💬 *Contexto:*\n_${contact.context}_\n`;
+
+    message += `\n─────────────────\n`;
+    message += `✏️ Envie as informações que quer atualizar\n`;
+    message += `_Exemplo: "email: novo@email.com, empresa: Nova Empresa"_`;
+
+    await this.evolutionService.sendTextMessage(toPhone, message);
+  }
+
+  // ============================================
+  // GERENCIAMENTO DE ESTADO DE ATUALIZAÇÃO
+  // ============================================
+
+  /**
+   * Salva estado de atualização pendente
+   */
+  private setPendingUpdate(phone: string, contactId: string, contactName: string) {
+    this.pendingUpdates.set(phone, {
+      contactId,
+      contactName,
+      timestamp: Date.now(),
+    });
+    this.logger.log(`Estado de atualização salvo para ${phone}: ${contactName} (${contactId})`);
+  }
+
+  /**
+   * Obtém estado de atualização pendente (se não expirou)
+   */
+  private getPendingUpdate(phone: string): { contactId: string; contactName: string } | null {
+    const pending = this.pendingUpdates.get(phone);
+    if (!pending) return null;
+
+    // Verifica se expirou
+    if (Date.now() - pending.timestamp > UPDATE_STATE_TIMEOUT_MS) {
+      this.pendingUpdates.delete(phone);
+      this.logger.log(`Estado de atualização expirado para ${phone}`);
+      return null;
+    }
+
+    return { contactId: pending.contactId, contactName: pending.contactName };
+  }
+
+  /**
+   * Limpa estado de atualização pendente
+   */
+  private clearPendingUpdate(phone: string) {
+    this.pendingUpdates.delete(phone);
+    this.logger.log(`Estado de atualização limpo para ${phone}`);
+  }
+
+  /**
+   * Processa resposta de atualização de contato
+   */
+  private async handleUpdateResponse(
+    userId: string,
+    fromPhone: string,
+    pendingUpdate: { contactId: string; contactName: string },
+    content: string,
+    messageId: string
+  ) {
+    this.logger.log(`Processando atualização para ${pendingUpdate.contactName}: "${content}"`);
+
+    try {
+      // Extrai os dados da mensagem de atualização
+      const extraction = await this.aiService.extractContactData(content);
+
+      if (!extraction.success || !extraction.data) {
+        await this.evolutionService.sendTextMessage(
+          fromPhone,
+          `🤔 Não consegui entender as informações. Tente enviar no formato:\n"email: novo@email.com, empresa: Nova Empresa"`
+        );
+        return { status: 'extraction_failed' };
+      }
+
+      // Prepara os dados para atualização (apenas campos não vazios)
+      const updateData: any = {};
+      if (extraction.data.phone) updateData.phone = extraction.data.phone;
+      if (extraction.data.email) updateData.email = extraction.data.email;
+      if (extraction.data.company) updateData.company = extraction.data.company;
+      if (extraction.data.position) updateData.position = extraction.data.position;
+      if (extraction.data.location) updateData.location = extraction.data.location;
+      if (extraction.data.context) updateData.notes = extraction.data.context;
+
+      // Se extraiu um nome diferente, não atualiza o nome (era só contexto)
+      // A não ser que o usuário tenha explicitamente pedido para mudar o nome
+
+      if (Object.keys(updateData).length === 0) {
+        await this.evolutionService.sendTextMessage(
+          fromPhone,
+          `🤔 Não encontrei informações para atualizar. O que você quer mudar em *${pendingUpdate.contactName}*?`
+        );
+        return { status: 'no_update_data' };
+      }
+
+      // Atualiza o contato existente
+      const updatedContact = await this.contactsService.update(
+        pendingUpdate.contactId,
+        userId,
+        updateData
+      );
+
+      // Limpa o estado de atualização pendente
+      this.clearPendingUpdate(fromPhone);
+
+      // Salva a mensagem
+      await this.prisma.whatsappMessage.create({
+        data: {
+          userId,
+          externalId: messageId,
+          fromPhone,
+          type: MessageType.TEXT,
+          content,
+          processed: true,
+          processedAt: new Date(),
+          approvalStatus: 'APPROVED',
+          contactCreated: false, // Foi atualização, não criação
+        },
+      });
+
+      // Monta mensagem de confirmação com os campos atualizados
+      const updatedFields: string[] = [];
+      if (updateData.phone) updatedFields.push(`📱 Telefone: ${updateData.phone}`);
+      if (updateData.email) updatedFields.push(`📧 Email: ${updateData.email}`);
+      if (updateData.company) updatedFields.push(`🏢 Empresa: ${updateData.company}`);
+      if (updateData.position) updatedFields.push(`💼 Cargo: ${updateData.position}`);
+      if (updateData.location) updatedFields.push(`📍 Local: ${updateData.location}`);
+      if (updateData.notes) updatedFields.push(`📝 Notas: ${updateData.notes}`);
+
+      const confirmMessage = `✅ *${pendingUpdate.contactName}* atualizado!\n\n${updatedFields.join('\n')}`;
+      await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
+
+      this.logger.log(`Contato ${pendingUpdate.contactName} atualizado com sucesso`);
+      return { status: 'updated', contactId: pendingUpdate.contactId };
+
+    } catch (error) {
+      this.logger.error(`Erro ao processar atualização: ${error.message}`);
+      this.clearPendingUpdate(fromPhone);
+
+      await this.evolutionService.sendTextMessage(
+        fromPhone,
+        `❌ Erro ao atualizar *${pendingUpdate.contactName}*. Tente novamente.`
+      );
+
+      return { status: 'error' };
+    }
   }
 
   private async sendApprovalRequest(messageId: string, toPhone: string, extractedData: any) {
