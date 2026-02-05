@@ -103,10 +103,37 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
       ctx.fillStyle = color
       ctx.fill()
 
+      // Anel laranja para contatos em comum
+      if (node.isShared) {
+        ctx.beginPath()
+        ctx.arc(node.x, node.y, size / 2 + 3, 0, 2 * Math.PI, false)
+        ctx.strokeStyle = '#F59E0B'
+        ctx.lineWidth = 2.5
+        ctx.stroke()
+
+        // Badge com count no canto superior direito
+        if (node.sharedByCount && node.sharedByCount > 0) {
+          const badgeX = node.x + size / 2 + 1
+          const badgeY = node.y - size / 2 - 1
+          const badgeRadius = 6
+          ctx.beginPath()
+          ctx.arc(badgeX, badgeY, badgeRadius, 0, 2 * Math.PI, false)
+          ctx.fillStyle = '#F59E0B'
+          ctx.fill()
+          ctx.font = `bold 7px Sans-Serif`
+          ctx.textAlign = 'center'
+          ctx.textBaseline = 'middle'
+          ctx.fillStyle = '#FFFFFF'
+          ctx.fillText(String(node.sharedByCount), badgeX, badgeY)
+        }
+      }
+
       // Borda se selecionado
       if (isSelected) {
         ctx.strokeStyle = '#1F2937'
         ctx.lineWidth = 3
+        ctx.beginPath()
+        ctx.arc(node.x, node.y, size / 2 + (node.isShared ? 5 : 0), 0, 2 * Math.PI, false)
         ctx.stroke()
       }
 
@@ -117,7 +144,7 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
       ctx.textAlign = 'center'
       ctx.textBaseline = 'top'
       ctx.fillStyle = '#374151'
-      ctx.fillText(label, node.x, node.y + size / 2 + 2)
+      ctx.fillText(label, node.x, node.y + size / 2 + (node.isShared ? 5 : 2))
     },
     [selectedNodeId]
   )

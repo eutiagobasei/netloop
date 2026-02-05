@@ -85,6 +85,10 @@ export default function NetworkPage() {
             <div className="h-3 w-3 rounded-full bg-gray-500" />
             <span className="text-xs text-gray-600">2º Nivel ({stats.secondDegree})</span>
           </div>
+          <div className="flex items-center gap-2">
+            <div className="h-3.5 w-3.5 rounded-full border-2 border-amber-500 bg-blue-500" />
+            <span className="text-xs text-gray-600">Contato em Comum</span>
+          </div>
         </div>
       </div>
 

@@ -140,6 +140,19 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
           </div>
         )}
 
+        {node.isShared && node.sharedByUsers && node.sharedByUsers.length > 0 && (
+          <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3">
+            <div className="flex items-center gap-2 mb-2">
+              <Users className="h-4 w-4 text-amber-600" />
+              <p className="text-sm font-semibold text-amber-800">Contato em Comum</p>
+            </div>
+            <p className="text-sm text-amber-700">
+              {node.sharedByUsers.map((u) => u.name).join(', ')}{' '}
+              {node.sharedByUsers.length === 1 ? 'também conhece' : 'também conhecem'} este contato
+            </p>
+          </div>
+        )}
+
         {node.type === 'user' && node.degree === 0 && (
           <div className="mt-6 rounded-lg bg-green-50 p-3">
             <p className="text-sm text-green-800">

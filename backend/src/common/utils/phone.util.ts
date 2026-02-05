@@ -65,4 +65,39 @@ export class PhoneUtil {
   static isValid(phone: string): boolean {
     return this.normalize(phone) !== null;
   }
+
+  /**
+   * Retorna variações de um telefone para matching flexível (com/sem 9º dígito)
+   * Ex: "5521987654321" retorna ["5521987654321", "552187654321"]
+   * Ex: "552187654321"  retorna ["552187654321", "5521987654321"]
+   */
+  static getVariations(phone: string | null): string[] {
+    if (!phone) return [];
+
+    // Remove tudo que não é número
+    let cleaned = phone.replace(/\D/g, '');
+
+    // Se não começa com 55, adiciona
+    if (!cleaned.startsWith('55') && cleaned.length >= 10) {
+      cleaned = '55' + cleaned;
+    }
+
+    if (!cleaned || cleaned.length < 12) return [];
+
+    const variations: string[] = [cleaned];
+
+    // Se tem 13 dígitos (55 + DDD + 9 + número), cria versão sem o 9
+    if (cleaned.length === 13 && cleaned[4] === '9') {
+      const withoutNine = cleaned.slice(0, 4) + cleaned.slice(5);
+      variations.push(withoutNine);
+    }
+
+    // Se tem 12 dígitos (55 + DDD + número), cria versão com o 9
+    if (cleaned.length === 12) {
+      const withNine = cleaned.slice(0, 4) + '9' + cleaned.slice(4);
+      variations.push(withNine);
+    }
+
+    return variations;
+  }
 }

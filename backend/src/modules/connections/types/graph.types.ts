@@ -13,6 +13,9 @@ export interface GraphNode {
   email?: string | null;
   context?: string | null;
   location?: string | null;
+  sharedByCount?: number;
+  sharedByUsers?: { id: string; name: string }[];
+  isShared?: boolean;
 }
 
 export interface GraphEdge {

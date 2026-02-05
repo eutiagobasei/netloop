@@ -133,6 +133,7 @@ model Contact {
   mentionedConnections MentionedConnection[]
 
   @@index([ownerId])
+  @@index([phone])
   @@map("contacts")
 }
 

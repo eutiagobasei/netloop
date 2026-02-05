@@ -4,6 +4,7 @@ import { ConnectionStrength } from '@prisma/client';
 import { CreateConnectionDto } from './dto/create-connection.dto';
 import { UpdateConnectionDto } from './dto/update-connection.dto';
 import { GraphData, GraphNode, GraphEdge } from './types/graph.types';
+import { PhoneUtil } from '@/common/utils/phone.util';
 
 @Injectable()
 export class ConnectionsService {
@@ -106,41 +107,8 @@ export class ConnectionsService {
     });
   }
 
-  /**
-   * Normaliza telefone para comparação
-   * Remove caracteres, adiciona código país e lida com 9º dígito
-   * Retorna array com variações possíveis para matching flexível
-   */
   private normalizePhoneVariations(phone: string | null): string[] {
-    if (!phone) return [];
-
-    // Remove tudo que não é número
-    let cleaned = phone.replace(/\D/g, '');
-
-    // Se não começa com 55, adiciona
-    if (!cleaned.startsWith('55') && cleaned.length >= 10) {
-      cleaned = '55' + cleaned;
-    }
-
-    if (!cleaned || cleaned.length < 12) return [];
-
-    const variations: string[] = [cleaned];
-
-    // Se tem 13 dígitos (55 + DDD + 9 + número), cria versão sem o 9
-    // Formato: 55 + DDD(2) + 9 + número(8) = 13 dígitos
-    if (cleaned.length === 13 && cleaned[4] === '9') {
-      const withoutNine = cleaned.slice(0, 4) + cleaned.slice(5);
-      variations.push(withoutNine);
-    }
-
-    // Se tem 12 dígitos (55 + DDD + número), cria versão com o 9
-    // Formato: 55 + DDD(2) + número(8) = 12 dígitos
-    if (cleaned.length === 12) {
-      const withNine = cleaned.slice(0, 4) + '9' + cleaned.slice(4);
-      variations.push(withNine);
-    }
-
-    return variations;
+    return PhoneUtil.getVariations(phone);
   }
 
   async getGraph(userId: string, depth = 2): Promise<GraphData> {
@@ -198,9 +166,73 @@ export class ConnectionsService {
     }
     this.logger.log(`Phone map size: ${phoneToUserMap.size}, keys: ${Array.from(phoneToUserMap.keys()).join(', ')}`);
 
+    // === Shared contacts lookup ===
+    // Collect all phones from first degree contacts and expand with variations
+    const allPhoneVariations: string[] = [];
+    const contactPhoneMap = new Map<string, string[]>(); // contactId -> variations
+
+    for (const conn of firstDegreeConnections) {
+      if (conn.contact.phone) {
+        const variations = PhoneUtil.getVariations(conn.contact.phone);
+        if (variations.length > 0) {
+          contactPhoneMap.set(conn.contactId, variations);
+          allPhoneVariations.push(...variations);
+        }
+      }
+    }
+
+    // Query contacts from OTHER users with matching phones
+    const sharedContacts = allPhoneVariations.length > 0
+      ? await this.prisma.contact.findMany({
+          where: {
+            ownerId: { not: userId },
+            phone: { in: allPhoneVariations },
+          },
+          select: {
+            phone: true,
+            owner: { select: { id: true, name: true } },
+          },
+        })
+      : [];
+
+    // Build map: normalizedPhone -> { users[] }
+    const sharedMap = new Map<string, { id: string; name: string }[]>();
+    for (const sc of sharedContacts) {
+      if (!sc.phone) continue;
+      const scVariations = PhoneUtil.getVariations(sc.phone);
+      for (const v of scVariations) {
+        const existing = sharedMap.get(v) || [];
+        if (!existing.some((u) => u.id === sc.owner.id)) {
+          existing.push({ id: sc.owner.id, name: sc.owner.name });
+        }
+        sharedMap.set(v, existing);
+      }
+    }
+
+    // Helper to find shared users for a contact
+    const getSharedInfo = (contactId: string): { isShared: boolean; sharedByCount: number; sharedByUsers: { id: string; name: string }[] } => {
+      const variations = contactPhoneMap.get(contactId) || [];
+      const usersSet = new Map<string, { id: string; name: string }>();
+      for (const v of variations) {
+        const users = sharedMap.get(v) || [];
+        for (const u of users) {
+          usersSet.set(u.id, u);
+        }
+      }
+      const sharedByUsers = Array.from(usersSet.values());
+      return {
+        isShared: sharedByUsers.length > 0,
+        sharedByCount: sharedByUsers.length,
+        sharedByUsers,
+      };
+    };
+    // === End shared contacts lookup ===
+
     for (const conn of firstDegreeConnections) {
       if (!visitedIds.has(conn.contactId)) {
         visitedIds.add(conn.contactId);
+
+        const shared = getSharedInfo(conn.contactId);
 
         nodes.push({
           id: conn.contactId,
@@ -218,6 +250,11 @@ export class ConnectionsService {
           email: conn.contact.email,
           context: conn.contact.context,
           location: conn.contact.location,
+          ...(shared.isShared ? {
+            isShared: true,
+            sharedByCount: shared.sharedByCount,
+            sharedByUsers: shared.sharedByUsers,
+          } : {}),
         });
 
         edges.push({

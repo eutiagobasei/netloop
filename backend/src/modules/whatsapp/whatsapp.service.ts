@@ -7,6 +7,7 @@ import { AIService } from '../ai/ai.service';
 import { EvolutionService } from './evolution.service';
 import { RegistrationService } from '../registration/registration.service';
 import { UsersService } from '../users/users.service';
+import { PhoneUtil } from '@/common/utils/phone.util';
 
 // Timeout para auto-aprovar (2 minutos)
 const AUTO_APPROVE_TIMEOUT_MS = 2 * 60 * 1000;
@@ -912,7 +913,72 @@ export class WhatsappService {
       await this.createAndAssignTags(userId, contact.id, extractedData.tags);
     }
 
+    // Notificação de contato em comum
+    if (contact.phone) {
+      this.notifySharedContact(userId, contact.name, contact.phone).catch((err) => {
+        this.logger.error(`Erro ao notificar contato em comum: ${err.message}`);
+      });
+    }
+
     return contact;
+  }
+
+  /**
+   * Notifica o usuário que cadastrou o contato caso outros usuários já tenham
+   * um contato com o mesmo telefone (contato em comum).
+   * Envio com delay de 3s após criação para não conflitar com confirmação de "salvo".
+   */
+  private async notifySharedContact(userId: string, contactName: string, phone: string) {
+    const phoneVariations = PhoneUtil.getVariations(phone);
+    if (phoneVariations.length === 0) return;
+
+    // Busca contatos de OUTROS users com mesmo telefone
+    const sharedContacts = await this.prisma.contact.findMany({
+      where: {
+        ownerId: { not: userId },
+        phone: { in: phoneVariations },
+      },
+      select: {
+        owner: { select: { id: true, name: true, phone: true } },
+      },
+    });
+
+    if (sharedContacts.length === 0) return;
+
+    // Deduplica por userId
+    const uniqueUsers = new Map<string, { name: string; phone: string | null }>();
+    for (const sc of sharedContacts) {
+      if (!uniqueUsers.has(sc.owner.id)) {
+        uniqueUsers.set(sc.owner.id, { name: sc.owner.name, phone: sc.owner.phone });
+      }
+    }
+
+    const otherNames = Array.from(uniqueUsers.values()).map((u) => u.name);
+    if (otherNames.length === 0) return;
+
+    // Busca o telefone do usuário que cadastrou para enviar a notificação
+    const currentUser = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { phone: true },
+    });
+
+    if (!currentUser?.phone) return;
+
+    const namesList = otherNames.length === 1
+      ? `*${otherNames[0]}*`
+      : otherNames.slice(0, -1).map((n) => `*${n}*`).join(', ') + ` e *${otherNames[otherNames.length - 1]}*`;
+
+    const message = `🔗 ${namesList} também ${otherNames.length === 1 ? 'conhece' : 'conhecem'} *${contactName}*! Vocês têm conexões em comum.`;
+
+    // Delay de 3s para não conflitar com a mensagem de confirmação
+    setTimeout(async () => {
+      try {
+        await this.evolutionService.sendTextMessage(currentUser.phone!, message);
+        this.logger.log(`Notificação de contato em comum enviada para ${currentUser.phone}: ${message}`);
+      } catch (err) {
+        this.logger.error(`Erro ao enviar notificação de contato em comum: ${err.message}`);
+      }
+    }, 3000);
   }
 
   private async createAndAssignTags(userId: string, contactId: string, tagNames: string[]) {
