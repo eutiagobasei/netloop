@@ -150,7 +150,7 @@ export class ContactsService {
   async create(ownerId: string, dto: CreateContactDto) {
     const { tagIds, ...contactData } = dto;
 
-    // Valida e normaliza telefone
+    // Valida e normaliza telefone (obrigatório)
     const normalizedPhone = PhoneUtil.normalize(contactData.phone);
     if (!normalizedPhone) {
       throw new BadRequestException('Telefone inválido. Use formato brasileiro: 21987654321 ou +5521987654321');
@@ -168,7 +168,7 @@ export class ContactsService {
     const contact = await this.prisma.contact.create({
       data: {
         ...contactData,
-        phone: normalizedPhone, // Salva normalizado
+        phone: normalizedPhone,
         ownerId,
         tags: tagIds?.length
           ? {
