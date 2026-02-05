@@ -61,11 +61,16 @@ export const authApi = {
 export interface GraphNode {
   id: string
   name: string
-  type: 'user' | 'contact'
+  type: 'user' | 'contact' | 'mentioned'
   degree: number
   tags?: { id: string; name: string; color: string | null }[]
   company?: string | null
   position?: string | null
+  description?: string | null
+  phone?: string | null
+  email?: string | null
+  context?: string | null
+  location?: string | null
 }
 
 export interface GraphEdge {

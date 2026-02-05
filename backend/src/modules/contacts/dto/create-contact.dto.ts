@@ -1,15 +1,18 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEmail, IsArray, IsUUID } from 'class-validator';
+import { IsString, IsOptional, IsEmail, IsArray, IsUUID, IsNotEmpty, Matches } from 'class-validator';
 
 export class CreateContactDto {
   @ApiProperty({ example: 'Maria Santos' })
   @IsString()
   name: string;
 
-  @ApiProperty({ example: '+5511988888888', required: false })
-  @IsOptional()
+  @ApiProperty({ example: '5511988888888', required: true, description: 'Telefone obrigatório. Formato: 5511988888888 (código país + DDD + número)' })
   @IsString()
-  phone?: string;
+  @IsNotEmpty({ message: 'Telefone é obrigatório' })
+  @Matches(/^(\+?55)?[1-9]{2}9?[0-9]{8}$/, {
+    message: 'Telefone inválido. Use formato: 21987654321 ou +5521987654321',
+  })
+  phone: string;
 
   @ApiProperty({ example: 'maria@empresa.com', required: false })
   @IsOptional()

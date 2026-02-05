@@ -214,6 +214,10 @@ export class ConnectionsService {
           })),
           company: conn.contact.company,
           position: conn.contact.position,
+          phone: conn.contact.phone,
+          email: conn.contact.email,
+          context: conn.contact.context,
+          location: conn.contact.location,
         });
 
         edges.push({
@@ -271,6 +275,10 @@ export class ConnectionsService {
                   })),
                   company: linkedConn.contact.company,
                   position: linkedConn.contact.position,
+                  phone: linkedConn.contact.phone,
+                  email: linkedConn.contact.email,
+                  context: linkedConn.contact.context,
+                  location: linkedConn.contact.location,
                 });
 
                 edges.push({
@@ -300,6 +308,7 @@ export class ConnectionsService {
                   color: '#9ca3af',
                 })),
                 description: mentioned.description,
+                phone: mentioned.phone,
               });
 
               edges.push({

@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef, Logger } from '@nestjs/common';
+import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef, Logger, BadRequestException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
@@ -7,6 +7,7 @@ import {
   ExtractionWithConnectionsResult,
   MentionedConnectionData,
 } from '../ai/dto/extracted-contact.dto';
+import { PhoneUtil } from '../../common/utils/phone.util';
 
 // Tipos para resposta de busca
 export interface SearchResult {
@@ -149,9 +150,25 @@ export class ContactsService {
   async create(ownerId: string, dto: CreateContactDto) {
     const { tagIds, ...contactData } = dto;
 
+    // Valida e normaliza telefone
+    const normalizedPhone = PhoneUtil.normalize(contactData.phone);
+    if (!normalizedPhone) {
+      throw new BadRequestException('Telefone inválido. Use formato brasileiro: 21987654321 ou +5521987654321');
+    }
+
+    // Verifica duplicata por telefone normalizado
+    const existingByPhone = await this.prisma.contact.findFirst({
+      where: { ownerId, phone: normalizedPhone },
+    });
+
+    if (existingByPhone) {
+      throw new ConflictException(`Já existe um contato com este telefone: ${existingByPhone.name}`);
+    }
+
     const contact = await this.prisma.contact.create({
       data: {
         ...contactData,
+        phone: normalizedPhone, // Salva normalizado
         ownerId,
         tags: tagIds?.length
           ? {

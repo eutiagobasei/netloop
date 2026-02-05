@@ -51,6 +51,7 @@ enum RegistrationStep {
   WELCOME_SENT    // Boas-vindas enviadas, aguardando nome
   AWAITING_NAME   // Aguardando resposta com nome
   AWAITING_EMAIL  // Aguardando resposta com email
+  CONVERSATION    // Conversa em andamento (IA coletando dados)
   COMPLETED       // Cadastro finalizado
   ABANDONED       // Usuário abandonou o fluxo
 }
@@ -315,15 +316,18 @@ model SystemSetting {
 // ============================================
 
 model UserRegistrationFlow {
-  id            String           @id @default(uuid())
-  phone         String           @unique  // Telefone do usuário em registro
-  step          RegistrationStep @default(WELCOME_SENT)
-  name          String?          // Nome coletado
-  email         String?          // Email coletado
-  lastMessageAt DateTime         @default(now())
-  createdAt     DateTime         @default(now())
-  updatedAt     DateTime         @updatedAt
-  expiresAt     DateTime         // Expira após 24h sem interação
+  id                  String           @id @default(uuid())
+  phone               String           @unique  // Telefone do usuário em registro
+  step                RegistrationStep @default(WELCOME_SENT)
+  name                String?          // Nome coletado
+  email               String?          // Email coletado
+  conversationHistory Json?            // Histórico da conversa [{role, content}]
+  extractedData       Json?            // Dados extraídos pela IA {name?, email?}
+  attemptsCount       Int              @default(0) // Contador de tentativas
+  lastMessageAt       DateTime         @default(now())
+  createdAt           DateTime         @default(now())
+  updatedAt           DateTime         @updatedAt
+  expiresAt           DateTime         // Expira após 24h sem interação
 
   @@index([phone])
   @@index([step])

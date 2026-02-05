@@ -1,6 +1,6 @@
 'use client'
 
-import { X, Building2, Briefcase, Tag, Users } from 'lucide-react'
+import { X, Building2, Briefcase, Tag, Users, FileText, Phone, Mail, MapPin } from 'lucide-react'
 import { GraphNode } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 
@@ -61,6 +61,56 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
             <div>
               <p className="text-sm font-medium text-gray-700">Cargo</p>
               <p className="text-sm text-gray-600">{node.position}</p>
+            </div>
+          </div>
+        )}
+
+        {node.phone && (
+          <div className="flex items-start gap-2">
+            <Phone className="h-4 w-4 mt-0.5 text-gray-400" />
+            <div>
+              <p className="text-sm font-medium text-gray-700">Telefone</p>
+              <p className="text-sm text-gray-600">{node.phone}</p>
+            </div>
+          </div>
+        )}
+
+        {node.email && (
+          <div className="flex items-start gap-2">
+            <Mail className="h-4 w-4 mt-0.5 text-gray-400" />
+            <div>
+              <p className="text-sm font-medium text-gray-700">Email</p>
+              <p className="text-sm text-gray-600">{node.email}</p>
+            </div>
+          </div>
+        )}
+
+        {node.location && (
+          <div className="flex items-start gap-2">
+            <MapPin className="h-4 w-4 mt-0.5 text-gray-400" />
+            <div>
+              <p className="text-sm font-medium text-gray-700">Localização</p>
+              <p className="text-sm text-gray-600">{node.location}</p>
+            </div>
+          </div>
+        )}
+
+        {node.context && (
+          <div className="flex items-start gap-2">
+            <FileText className="h-4 w-4 mt-0.5 text-gray-400" />
+            <div>
+              <p className="text-sm font-medium text-gray-700">Contexto</p>
+              <p className="text-sm text-gray-600 whitespace-pre-line">{node.context}</p>
+            </div>
+          </div>
+        )}
+
+        {node.description && (
+          <div className="flex items-start gap-2">
+            <FileText className="h-4 w-4 mt-0.5 text-gray-400" />
+            <div>
+              <p className="text-sm font-medium text-gray-700">Descrição</p>
+              <p className="text-sm text-gray-600 whitespace-pre-line">{node.description}</p>
             </div>
           </div>
         )}

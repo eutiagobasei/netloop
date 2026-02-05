@@ -9,6 +9,19 @@ import {
 
 export type MessageIntent = 'query' | 'contact_info' | 'update_contact' | 'other';
 
+export interface RegistrationResponseParams {
+  userMessage: string;
+  conversationHistory: Array<{ role: string; content: string }>;
+  extractedData: { name?: string; email?: string; phoneConfirmed?: boolean };
+  phoneFormatted?: string;
+}
+
+export interface RegistrationResponseResult {
+  response: string;
+  extracted: { name?: string; email?: string; phoneConfirmed?: boolean };
+  isComplete: boolean;
+}
+
 @Injectable()
 export class ExtractionService {
   private readonly logger = new Logger(ExtractionService.name);
@@ -186,7 +199,7 @@ Analise o texto fornecido e extraia as seguintes informações (se disponíveis)
 - name: Nome completo da pessoa (IMPORTANTE: incluir nome E sobrenome exatamente como mencionado. Ex: "João Silva", "Maria Santos", não apenas "João")
 - company: Nome da empresa onde trabalha
 - position: Cargo ou função
-- phone: Número de telefone (formato brasileiro)
+- phone: Número de telefone (formato brasileiro) - CAMPO OBRIGATÓRIO para salvar contato
 - email: Endereço de email
 - location: Cidade, estado ou país
 - context: Um resumo de como/onde se conheceram ou o contexto do encontro
@@ -195,6 +208,8 @@ Analise o texto fornecido e extraia as seguintes informações (se disponíveis)
   * Interesses e áreas de atuação profissional (ex: "investidor", "tecnologia", "podcast")
 
 IMPORTANTE:
+- O campo PHONE é OBRIGATÓRIO para salvar um contato - se não estiver no texto, retorne phone como null mas avise no contexto
+- Normalize o telefone para apenas números se possível (ex: 5521987654321)
 - Se uma informação não estiver clara no texto, não invente. Deixe o campo vazio ou null.
 - O campo "context" deve ser um resumo útil do encontro/conversa.
 - Tags devem priorizar ONDE/COMO se conheceram (pontos de conexão), seguido de interesses.
@@ -263,7 +278,7 @@ Esquema:
 {
   "contact": {
     "name": "string (nome completo COM sobrenome, exatamente como mencionado)",
-    "phone": "string|null (telefone formato brasileiro)",
+    "phone": "string|null (telefone formato brasileiro - OBRIGATÓRIO para salvar)",
     "email": "string|null",
     "company": "string|null (empresa)",
     "position": "string|null (cargo)",
@@ -284,6 +299,7 @@ Esquema:
 Regras:
 - O "contact" é a pessoa PRINCIPAL sobre quem o texto fala
 - NOME: Capture exatamente como mencionado, incluindo sobrenome (ex: "Ianne Higino", não "Ianne")
+- PHONE: OBRIGATÓRIO para salvar um contato. Normalize para apenas números (ex: 5521987654321)
 - TAGS: Priorize PONTOS DE CONEXÃO (onde/como se conheceram) + interesses profissionais
 - "connections" são OUTRAS pessoas mencionadas que o contact conhece ou indicou
 - Se não houver conexões mencionadas, retorne connections: []
@@ -347,6 +363,156 @@ Regras:
         contact: {},
         connections: [],
         rawResponse: error.message,
+      };
+    }
+  }
+
+  /**
+   * Gera resposta conversacional para o fluxo de registro
+   * e extrai nome/email da conversa de forma natural
+   * Agora inclui confirmação de telefone antes de pedir email
+   */
+  async generateRegistrationResponse(
+    params: RegistrationResponseParams,
+  ): Promise<RegistrationResponseResult> {
+    const { userMessage, conversationHistory, extractedData, phoneFormatted } = params;
+
+    this.logger.log(
+      `Gerando resposta de registro. Dados atuais: ${JSON.stringify(extractedData)}`,
+    );
+
+    const client = await this.openaiService.getClient();
+
+    const systemPrompt = `Você é o assistente do NetLoop, uma plataforma de networking que ajuda pessoas a organizar seus contatos profissionais.
+Um novo usuário está se cadastrando via WhatsApp.
+
+DADOS JÁ COLETADOS:
+- Nome: ${extractedData.name || 'NÃO COLETADO'}
+- Telefone confirmado: ${extractedData.phoneConfirmed ? 'SIM' : 'NÃO'}
+- Telefone detectado: ${phoneFormatted || 'NÃO DISPONÍVEL'}
+- Email: ${extractedData.email || 'NÃO COLETADO'}
+
+REGRAS IMPORTANTES:
+1. Seja conversacional e amigável, NUNCA robótico ou formal demais
+2. Use linguagem natural e descontraída (pode usar "você", "a gente", etc)
+3. Respostas curtas e diretas (máximo 2-3 frases)
+4. Se for a primeira mensagem (saudação), apresente-se brevemente e pergunte o nome
+5. APÓS ter o nome, peça confirmação do telefone mostrando o número formatado
+6. Se usuário confirmar o telefone (sim, correto, isso, exato, etc), marque phoneConfirmed: true
+7. Se usuário negar (não, errado, etc), peça para digitar o número correto
+8. Só peça email DEPOIS de ter nome E telefone confirmado
+9. Quando tiver TODOS (nome + telefone confirmado + email válido), confirme o cadastro com entusiasmo
+10. Email deve ter formato válido (algo@algo.algo)
+11. NÃO invente dados - só extraia o que o usuário realmente disse
+
+FLUXO DE ESTADOS:
+1. [Primeira mensagem] → Se apresentar e pedir nome
+2. [TEM NOME] → Mostrar telefone detectado e pedir confirmação
+3. [TELEFONE CONFIRMADO] → Pedir email
+4. [COMPLETED] → Nome + Telefone + Email coletados
+
+EXEMPLOS DE TOM:
+- "Oi! Prazer, sou o assistente do NetLoop 👋 Como posso te chamar?"
+- "Show, Tiago! Detectei que seu número é ${phoneFormatted || '+55 XX XXXXX-XXXX'}. Tá certo?"
+- "Perfeito! Me passa seu email pra finalizar o cadastro?"
+- "Pronto! Cadastro concluído! Agora é só me mandar áudios ou textos sobre pessoas que conheceu 🚀"
+
+RESPONDA APENAS EM JSON VÁLIDO:
+{
+  "response": "Sua mensagem de resposta",
+  "extracted": {
+    "name": "nome extraído ou null se não encontrou",
+    "email": "email extraído ou null se não encontrou",
+    "phoneConfirmed": true/false (só true se o usuário CONFIRMOU explicitamente o telefone)
+  },
+  "isComplete": false
+}
+
+IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmado + email válido) estiverem coletados.`;
+
+    const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
+      { role: 'system', content: systemPrompt },
+    ];
+
+    // Adiciona histórico da conversa
+    for (const msg of conversationHistory) {
+      messages.push({
+        role: msg.role as 'user' | 'assistant',
+        content: msg.content,
+      });
+    }
+
+    // Adiciona mensagem atual
+    messages.push({ role: 'user', content: userMessage });
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages,
+        response_format: { type: 'json_object' },
+        temperature: 0.7,
+        max_tokens: 500,
+      });
+
+      const content = response.choices[0]?.message?.content;
+
+      if (!content) {
+        throw new Error('Resposta vazia do modelo');
+      }
+
+      const result = JSON.parse(content);
+
+      // Mescla dados extraídos com os existentes
+      const mergedData = {
+        name: result.extracted?.name || extractedData.name || undefined,
+        email: result.extracted?.email || extractedData.email || undefined,
+        phoneConfirmed: result.extracted?.phoneConfirmed || extractedData.phoneConfirmed || false,
+      };
+
+      // Valida email se extraído
+      if (mergedData.email) {
+        const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+        if (!emailRegex.test(mergedData.email)) {
+          mergedData.email = undefined;
+        }
+      }
+
+      // Verifica se está completo (tem nome, telefone confirmado e email válido)
+      const isComplete = !!(mergedData.name && mergedData.phoneConfirmed && mergedData.email);
+
+      this.logger.log(
+        `Resposta gerada. Dados extraídos: ${JSON.stringify(mergedData)}, completo: ${isComplete}`,
+      );
+
+      return {
+        response: result.response || 'Oi! Como posso te ajudar com o cadastro?',
+        extracted: mergedData,
+        isComplete,
+      };
+    } catch (error) {
+      this.logger.error(`Erro ao gerar resposta de registro: ${error.message}`);
+
+      // Fallback para resposta genérica
+      if (!extractedData.name) {
+        return {
+          response: 'Oi! Sou o assistente do NetLoop. Como posso te chamar?',
+          extracted: {},
+          isComplete: false,
+        };
+      }
+
+      if (!extractedData.email) {
+        return {
+          response: `Oi, ${extractedData.name}! Me passa seu email pra finalizar o cadastro?`,
+          extracted: { name: extractedData.name },
+          isComplete: false,
+        };
+      }
+
+      return {
+        response: 'Desculpa, tive um problema. Pode repetir?',
+        extracted: extractedData,
+        isComplete: false,
       };
     }
   }

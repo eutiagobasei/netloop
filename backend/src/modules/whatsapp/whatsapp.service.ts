@@ -195,6 +195,15 @@ export class WhatsappService {
 
     // Iniciar novo fluxo de boas-vindas
     await this.registrationService.startWelcomeFlow(phone);
+
+    // Processa a primeira mensagem do usuário com a IA
+    if (content) {
+      const result = await this.registrationService.processFlowResponse(phone, content);
+      if (result.completed) {
+        return { status: 'registration_completed', userId: result.userId };
+      }
+    }
+
     return { status: 'welcome_sent' };
   }
 
@@ -1003,7 +1012,7 @@ export class WhatsappService {
 
   async createContactFromMessage(messageId: string, userId: string, contactData: {
     name: string;
-    phone?: string;
+    phone: string;
     email?: string;
     company?: string;
     position?: string;

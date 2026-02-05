@@ -105,6 +105,10 @@ export interface GraphNode {
   company?: string | null
   position?: string | null
   description?: string | null
+  phone?: string | null
+  email?: string | null
+  context?: string | null
+  location?: string | null
 }
 
 export interface GraphEdge {
