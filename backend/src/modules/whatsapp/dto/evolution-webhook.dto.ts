@@ -37,6 +37,12 @@ class MessageContent {
     url?: string;
     caption?: string;
   };
+
+  @IsOptional()
+  contactMessage?: {
+    displayName?: string;
+    vcard: string;
+  };
 }
 
 class WebhookData {

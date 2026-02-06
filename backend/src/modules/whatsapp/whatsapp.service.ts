@@ -8,6 +8,7 @@ import { EvolutionService } from './evolution.service';
 import { RegistrationService } from '../registration/registration.service';
 import { UsersService } from '../users/users.service';
 import { PhoneUtil } from '@/common/utils/phone.util';
+import { parseVCard } from './utils/vcard-parser';
 
 // Timeout para auto-aprovar (2 minutos)
 const AUTO_APPROVE_TIMEOUT_MS = 2 * 60 * 1000;
@@ -103,12 +104,24 @@ export class WhatsappService {
     const content = this.extractMessageContent(data);
     let audioUrl: string | undefined;
     let messageType: MessageType = MessageType.TEXT;
+    let vcardData: { name: string; phone: string | null; email: string | null; company: string | null } | null = null;
 
     if (data.message?.audioMessage) {
       messageType = MessageType.AUDIO;
       audioUrl = data.message.audioMessage.url;
     } else if (data.message?.imageMessage) {
       messageType = MessageType.IMAGE;
+    } else if (data.message?.contactMessage) {
+      messageType = MessageType.CONTACT;
+      const vcard = data.message.contactMessage.vcard;
+      if (vcard) {
+        vcardData = parseVCard(vcard);
+        // Use displayName as fallback if FN not found in vCard
+        if (!vcardData.name && data.message.contactMessage.displayName) {
+          vcardData.name = data.message.contactMessage.displayName;
+        }
+        this.logger.log(`vCard parseado: ${JSON.stringify(vcardData)}`);
+      }
     }
 
     // Guarda a messageKey para download de mídia via Evolution API
@@ -151,7 +164,7 @@ export class WhatsappService {
     }
 
     // Usuário cadastrado - processar mensagem normalmente
-    return this.processUserMessage(user.id, fromPhone, pushName, content, audioUrl, messageType, messageId, messageKey);
+    return this.processUserMessage(user.id, fromPhone, pushName, content, audioUrl, messageType, messageId, messageKey, vcardData);
   }
 
   /**
@@ -236,6 +249,7 @@ export class WhatsappService {
     messageType: MessageType,
     messageId: string,
     messageKey?: any,
+    vcardData?: { name: string; phone: string | null; email: string | null; company: string | null } | null,
   ) {
     // Verifica se é uma resposta de aprovação
     const pendingMessage = await this.findPendingApproval(userId, fromPhone);
@@ -253,6 +267,11 @@ export class WhatsappService {
     if (!content && messageType === MessageType.TEXT) {
       this.logger.warn('Mensagem sem conteúdo de texto');
       return { status: 'ignored', reason: 'no content' };
+    }
+
+    // Se é contato compartilhado, processa diretamente (sem IA)
+    if (messageType === MessageType.CONTACT && vcardData) {
+      return this.processContactMessage(userId, fromPhone, messageId, vcardData);
     }
 
     // Salva a mensagem (não inclui pushName no content para evitar confusão na IA)
@@ -276,6 +295,55 @@ export class WhatsappService {
     return {
       status: 'received',
       messageId: message.id,
+    };
+  }
+
+  /**
+   * Processa mensagem de contato compartilhado (vCard)
+   */
+  private async processContactMessage(
+    userId: string,
+    fromPhone: string,
+    messageId: string,
+    vcardData: { name: string; phone: string | null; email: string | null; company: string | null },
+  ) {
+    this.logger.log(`Processando contato compartilhado: ${vcardData.name}`);
+
+    // Prepara os dados extraídos no formato esperado
+    const extractedData = {
+      name: vcardData.name,
+      phone: vcardData.phone,
+      email: vcardData.email,
+      company: vcardData.company,
+    };
+
+    // Salva a mensagem com os dados já extraídos
+    const message = await this.prisma.whatsappMessage.create({
+      data: {
+        userId: userId,
+        externalId: messageId,
+        fromPhone: fromPhone,
+        type: MessageType.CONTACT,
+        content: `Contato compartilhado: ${vcardData.name}`,
+        extractedData: extractedData,
+        processed: true,
+        processedAt: new Date(),
+        approvalStatus: 'PENDING',
+      },
+    });
+
+    this.logger.log(`Contato compartilhado salvo: ${message.id}`);
+
+    // Envia para aprovação
+    if (extractedData.name) {
+      await this.sendApprovalRequest(message.id, fromPhone, extractedData);
+      this.scheduleAutoApproval(message.id, fromPhone);
+    }
+
+    return {
+      status: 'received',
+      messageId: message.id,
+      type: 'contact',
     };
   }
 
