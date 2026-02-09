@@ -6,7 +6,7 @@ import {
   ExtractionResult,
 } from '../dto/extracted-contact.dto';
 
-export type MessageIntent = 'query' | 'contact_info' | 'update_contact' | 'other';
+export type MessageIntent = 'query' | 'contact_info' | 'update_contact' | 'register_intent' | 'other';
 
 export interface RegistrationResponseParams {
   userMessage: string;
@@ -50,11 +50,12 @@ export class ExtractionService {
 - "query": usuário quer BUSCAR informação sobre alguém (ex: "quem é João?", "o que sabe sobre Maria?", "me fala do Pedro", "conhece algum advogado?")
 - "contact_info": usuário está INFORMANDO dados de um contato para cadastrar. DEVE conter informações substanciais como: nome + empresa, nome + cargo, nome + contexto de como conheceu, etc. NÃO classifique como contact_info se for apenas um nome solto ou saudação.
 - "update_contact": usuário quer ATUALIZAR dados de um contato existente (ex: "atualizar dados de João", "editar informações do Pedro", "corrigir o email da Maria")
+- "register_intent": usuário demonstra INTENÇÃO de cadastrar um contato mas NÃO envia os dados ainda (ex: "quero salvar um contato", "cadastrar novo contato", "adicionar pessoa", "salvar contato novo")
 - "other": saudação (oi, olá, bom dia), agradecimento, confirmação (ok, sim), ou mensagem sem informação de contato útil
 
 IMPORTANTE: Mensagens como "Olá", "Opa", "Oi tudo bem?", "Bom dia", apenas um nome sem contexto, ou saudações em geral são SEMPRE "other".
 
-Responda APENAS com: query, contact_info, update_contact ou other`,
+Responda APENAS com: query, contact_info, update_contact, register_intent ou other`,
 
     query_subject: `Extraia o NOME da pessoa ou o ASSUNTO que o usuário está buscando.
 Exemplos:
@@ -224,7 +225,7 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
       });
 
       const intent = response.choices[0]?.message?.content?.trim().toLowerCase();
-      const validIntent = ['query', 'contact_info', 'update_contact', 'other'].includes(intent || '')
+      const validIntent = ['query', 'contact_info', 'update_contact', 'register_intent', 'other'].includes(intent || '')
         ? (intent as MessageIntent)
         : 'other';
 

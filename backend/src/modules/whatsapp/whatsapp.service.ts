@@ -620,6 +620,30 @@ export class WhatsappService {
         return;
       }
 
+      // 3.5. SE FOR REGISTER_INTENT → pedir dados do contato
+      if (intent === 'register_intent') {
+        await this.prisma.whatsappMessage.update({
+          where: { id: messageId },
+          data: {
+            transcription,
+            processed: true,
+            processedAt: new Date(),
+            approvalStatus: 'APPROVED',
+          },
+        });
+
+        await this.evolutionService.sendTextMessage(
+          fromPhone,
+          '📝 Ótimo! Para cadastrar um novo contato, me envie os dados:\n\n' +
+            '*Nome completo* e *telefone* (obrigatórios)\n' +
+            'Pode incluir também: empresa, cargo, email, como se conheceram.\n\n' +
+            '_Exemplo: "João Silva, 11999887766, trabalha na TechCorp como desenvolvedor, conheci no meetup de JS"_',
+        );
+
+        this.logger.log(`Register intent processado para ${messageId}`);
+        return;
+      }
+
       if (intent === 'contact_info') {
         this.logger.log(`Extraindo dados do texto: ${messageId}`);
         const extraction = await this.aiService.extractContactData(transcription);
@@ -658,22 +682,39 @@ export class WhatsappService {
       }
 
       // 4. OUTROS (saudação, etc) → gera resposta amigável via IA
-      await this.prisma.whatsappMessage.update({
-        where: { id: messageId },
-        data: {
-          transcription,
-          processed: true,
-          processedAt: new Date(),
-          approvalStatus: 'APPROVED',
-        },
-      });
+      try {
+        await this.prisma.whatsappMessage.update({
+          where: { id: messageId },
+          data: {
+            transcription,
+            processed: true,
+            processedAt: new Date(),
+            approvalStatus: 'APPROVED',
+          },
+        });
 
-      // Busca nome do usuário para personalizar resposta
-      const user = await this.usersService.findByPhone(fromPhone);
-      const greetingResponse = await this.aiService.generateGreetingResponse(user?.name);
-      await this.evolutionService.sendTextMessage(fromPhone, greetingResponse);
+        // Busca nome do usuário para personalizar resposta
+        const user = await this.usersService.findByPhone(fromPhone);
+        this.logger.log(`Gerando saudação para usuário: ${user?.name || 'desconhecido'}`);
 
-      this.logger.log(`Mensagem ${messageId} respondida com saudação IA`);
+        const greetingResponse = await this.aiService.generateGreetingResponse(user?.name);
+        this.logger.log(`Resposta gerada: ${greetingResponse.substring(0, 50)}...`);
+
+        await this.evolutionService.sendTextMessage(fromPhone, greetingResponse);
+        this.logger.log(`Mensagem ${messageId} respondida com saudação IA`);
+      } catch (greetingError) {
+        this.logger.error(`Erro ao enviar saudação para ${fromPhone}:`, greetingError);
+        // Fallback: tenta enviar mensagem simples
+        try {
+          await this.evolutionService.sendTextMessage(
+            fromPhone,
+            'Olá! Como posso ajudar você hoje?',
+          );
+          this.logger.log(`Fallback de saudação enviado para ${fromPhone}`);
+        } catch (fallbackError) {
+          this.logger.error(`Fallback também falhou para ${fromPhone}:`, fallbackError);
+        }
+      }
     } catch (error) {
       this.logger.error(`Erro ao processar mensagem ${messageId}:`, error);
 
