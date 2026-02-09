@@ -46,6 +46,7 @@ enum SettingCategory {
   AI          // Configurações de IA (OpenAI, Anthropic)
   WHATSAPP    // Configurações de WhatsApp/Evolution
   SYSTEM      // Configurações gerais do sistema
+  PROMPTS     // Prompts de IA (extração, classificação, etc)
 }
 
 enum RegistrationStep {

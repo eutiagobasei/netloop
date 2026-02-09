@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenAIService } from './openai.service';
+import { SettingsService } from '../../settings/settings.service';
 import {
   ExtractedContactData,
   ExtractionResult,
@@ -26,7 +27,168 @@ export interface RegistrationResponseResult {
 export class ExtractionService {
   private readonly logger = new Logger(ExtractionService.name);
 
-  constructor(private readonly openaiService: OpenAIService) {}
+  constructor(
+    private readonly openaiService: OpenAIService,
+    private readonly settingsService: SettingsService,
+  ) {}
+
+  /**
+   * Obtém um prompt do banco de dados ou retorna o padrão
+   */
+  private async getPrompt(key: string, defaultPrompt: string): Promise<string> {
+    try {
+      const setting = await this.settingsService.getDecryptedValue(`prompt_${key}`);
+      return setting || defaultPrompt;
+    } catch {
+      return defaultPrompt;
+    }
+  }
+
+  /**
+   * Prompts padrão (fallback se não estiverem no banco)
+   */
+  private readonly DEFAULT_PROMPTS = {
+    intent_classification: `Classifique a intenção da mensagem:
+- "query": usuário quer BUSCAR informação sobre alguém (ex: "quem é João?", "o que sabe sobre Maria?", "me fala do Pedro", "conhece algum advogado?")
+- "contact_info": usuário está INFORMANDO dados de um contato para cadastrar. DEVE conter informações substanciais como: nome + empresa, nome + cargo, nome + contexto de como conheceu, etc. NÃO classifique como contact_info se for apenas um nome solto ou saudação.
+- "update_contact": usuário quer ATUALIZAR dados de um contato existente (ex: "atualizar dados de João", "editar informações do Pedro", "corrigir o email da Maria")
+- "other": saudação (oi, olá, bom dia), agradecimento, confirmação (ok, sim), ou mensagem sem informação de contato útil
+
+IMPORTANTE: Mensagens como "Olá", "Opa", "Oi tudo bem?", "Bom dia", apenas um nome sem contexto, ou saudações em geral são SEMPRE "other".
+
+Responda APENAS com: query, contact_info, update_contact ou other`,
+
+    query_subject: `Extraia o NOME da pessoa ou o ASSUNTO que o usuário está buscando.
+Exemplos:
+- "quem é o João?" → "João"
+- "o que você sabe sobre Maria Silva?" → "Maria Silva"
+- "me fala do Pedro" → "Pedro"
+- "conhece algum advogado?" → "advogado"
+- "tem alguém de marketing?" → "marketing"
+
+Responda APENAS com o nome ou termo de busca, sem pontuação ou explicações. Se não conseguir identificar, responda "null".`,
+
+    contact_extraction: `Você é um assistente especializado em extrair informações de contatos profissionais de textos em português.
+
+Analise o texto fornecido e extraia as seguintes informações (se disponíveis):
+- name: Nome completo da pessoa (IMPORTANTE: incluir nome E sobrenome exatamente como mencionado. Ex: "João Silva", "Maria Santos", não apenas "João")
+- company: Nome da empresa onde trabalha
+- position: Cargo ou função
+- phone: Número de telefone (formato brasileiro) - CAMPO OBRIGATÓRIO para salvar contato
+- email: Endereço de email
+- location: Cidade, estado ou país
+- context: Um resumo de como/onde se conheceram ou o contexto do encontro
+- tags: Lista de PONTOS DE CONEXÃO - inclua:
+  * Lugares, eventos, grupos ou comunidades onde se conheceram (ex: "Em Adoração", "SIPAT 2024", "Igreja São Paulo")
+  * Interesses e áreas de atuação profissional (ex: "investidor", "tecnologia", "podcast")
+
+IMPORTANTE:
+- O campo PHONE é OBRIGATÓRIO para salvar um contato - se não estiver no texto, retorne phone como null mas avise no contexto
+- Normalize o telefone para apenas números se possível (ex: 5521987654321)
+- Se uma informação não estiver clara no texto, não invente. Deixe o campo vazio ou null.
+- O campo "context" deve ser um resumo útil do encontro/conversa.
+- Tags devem priorizar ONDE/COMO se conheceram (pontos de conexão), seguido de interesses.
+- Capture o nome EXATAMENTE como mencionado, incluindo sobrenome.
+
+Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`,
+
+    contact_with_connections: `Extraia informações de contato do texto. Retorne apenas JSON puro.
+
+Esquema:
+{
+  "contact": {
+    "name": "string (nome completo COM sobrenome, exatamente como mencionado)",
+    "phone": "string|null (telefone formato brasileiro - OBRIGATÓRIO para salvar)",
+    "email": "string|null",
+    "company": "string|null (empresa)",
+    "position": "string|null (cargo)",
+    "location": "string|null (cidade/estado)",
+    "tags": ["string"] (PONTOS DE CONEXÃO: lugares, eventos, grupos onde se conheceram + interesses. Ex: ["Em Adoração", "podcast", "investidor"]),
+    "context": "string (resumo do encontro/conversa)"
+  },
+  "connections": [
+    {
+      "name": "string (nome completo da pessoa mencionada)",
+      "about": "string (descrição/contexto sobre ela)",
+      "tags": ["string"],
+      "phone": "string|null"
+    }
+  ]
+}
+
+Regras:
+- O "contact" é a pessoa PRINCIPAL sobre quem o texto fala
+- NOME: Capture exatamente como mencionado, incluindo sobrenome (ex: "Ianne Higino", não "Ianne")
+- PHONE: OBRIGATÓRIO para salvar um contato. Normalize para apenas números (ex: 5521987654321)
+- TAGS: Priorize PONTOS DE CONEXÃO (onde/como se conheceram) + interesses profissionais
+- "connections" são OUTRAS pessoas mencionadas que o contact conhece ou indicou
+- Se não houver conexões mencionadas, retorne connections: []
+- NÃO invente dados que não estejam explícitos no texto
+- Campos ausentes devem ser null ou array vazio`,
+
+    greeting_response: `Você é um assistente virtual amigável do NetLoop, um sistema de gerenciamento de contatos via WhatsApp.
+
+Gere uma resposta curta e simpática para uma saudação do usuário.
+
+FUNCIONALIDADES DO SISTEMA:
+- Salvar contatos: usuário envia nome, telefone, email, etc.
+- Buscar contatos: usuário pergunta "quem é João?" ou "me passa o contato do Carlos"
+- Atualizar contatos existentes
+
+REGRAS:
+- Seja breve (máximo 3 linhas)
+- Use tom amigável e profissional
+- Mencione brevemente o que o sistema pode fazer
+- {{userName}}
+- Pode usar 1 emoji no máximo`,
+
+    registration_response: `Você é o assistente do NetLoop, uma plataforma de networking que ajuda pessoas a organizar seus contatos profissionais.
+Um novo usuário está se cadastrando via WhatsApp.
+
+DADOS JÁ COLETADOS:
+- Nome: {{name}}
+- Telefone confirmado: {{phoneConfirmed}}
+- Telefone detectado: {{phoneFormatted}}
+- Email: {{email}}
+
+REGRAS IMPORTANTES:
+1. Seja conversacional e amigável, NUNCA robótico ou formal demais
+2. Use linguagem natural e descontraída (pode usar "você", "a gente", etc)
+3. Respostas curtas e diretas (máximo 2-3 frases)
+4. Se for a primeira mensagem (saudação), apresente-se brevemente e pergunte o nome
+5. APÓS ter o nome, peça confirmação do telefone mostrando o número formatado
+6. Se usuário confirmar o telefone (sim, correto, isso, exato, etc), marque phoneConfirmed: true
+7. Se usuário negar (não, errado, etc), peça para digitar o número correto
+8. Só peça email DEPOIS de ter nome E telefone confirmado
+9. Quando tiver TODOS (nome + telefone confirmado + email válido), confirme o cadastro com entusiasmo
+10. Email deve ter formato válido (algo@algo.algo)
+11. NÃO invente dados - só extraia o que o usuário realmente disse
+
+FLUXO DE ESTADOS:
+1. [Primeira mensagem] → Se apresentar e pedir nome
+2. [TEM NOME] → Mostrar telefone detectado e pedir confirmação
+3. [TELEFONE CONFIRMADO] → Pedir email
+4. [COMPLETED] → Nome + Telefone + Email coletados
+
+EXEMPLOS DE TOM:
+- "Oi! Prazer, sou o assistente do NetLoop 👋 Como posso te chamar?"
+- "Show, {{name}}! Detectei que seu número é {{phoneFormatted}}. Tá certo?"
+- "Perfeito! Me passa seu email pra finalizar o cadastro?"
+- "Pronto! Cadastro concluído! Agora é só me mandar áudios ou textos sobre pessoas que conheceu 🚀"
+
+RESPONDA APENAS EM JSON VÁLIDO:
+{
+  "response": "Sua mensagem de resposta",
+  "extracted": {
+    "name": "nome extraído ou null se não encontrou",
+    "email": "email extraído ou null se não encontrou",
+    "phoneConfirmed": true/false
+  },
+  "isComplete": false
+}
+
+IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmado + email válido) estiverem coletados.`,
+  };
 
   /**
    * Lista de saudações comuns que devem ser ignoradas
@@ -81,23 +243,16 @@ export class ExtractionService {
     }
 
     const client = await this.openaiService.getClient();
+    const systemPrompt = await this.getPrompt(
+      'intent_classification',
+      this.DEFAULT_PROMPTS.intent_classification,
+    );
 
     try {
       const response = await client.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
-          {
-            role: 'system',
-            content: `Classifique a intenção da mensagem:
-- "query": usuário quer BUSCAR informação sobre alguém (ex: "quem é João?", "o que sabe sobre Maria?", "me fala do Pedro", "conhece algum advogado?")
-- "contact_info": usuário está INFORMANDO dados de um contato para cadastrar. DEVE conter informações substanciais como: nome + empresa, nome + cargo, nome + contexto de como conheceu, etc. NÃO classifique como contact_info se for apenas um nome solto ou saudação.
-- "update_contact": usuário quer ATUALIZAR dados de um contato existente (ex: "atualizar dados de João", "editar informações do Pedro", "corrigir o email da Maria")
-- "other": saudação (oi, olá, bom dia), agradecimento, confirmação (ok, sim), ou mensagem sem informação de contato útil
-
-IMPORTANTE: Mensagens como "Olá", "Opa", "Oi tudo bem?", "Bom dia", apenas um nome sem contexto, ou saudações em geral são SEMPRE "other".
-
-Responda APENAS com: query, contact_info, update_contact ou other`,
-          },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: text },
         ],
         temperature: 0.1,
@@ -124,23 +279,16 @@ Responda APENAS com: query, contact_info, update_contact ou other`,
     this.logger.log(`Extraindo assunto da query: ${text.substring(0, 50)}...`);
 
     const client = await this.openaiService.getClient();
+    const systemPrompt = await this.getPrompt(
+      'query_subject',
+      this.DEFAULT_PROMPTS.query_subject,
+    );
 
     try {
       const response = await client.chat.completions.create({
         model: 'gpt-4o-mini',
         messages: [
-          {
-            role: 'system',
-            content: `Extraia o NOME da pessoa ou o ASSUNTO que o usuário está buscando.
-Exemplos:
-- "quem é o João?" → "João"
-- "o que você sabe sobre Maria Silva?" → "Maria Silva"
-- "me fala do Pedro" → "Pedro"
-- "conhece algum advogado?" → "advogado"
-- "tem alguém de marketing?" → "marketing"
-
-Responda APENAS com o nome ou termo de busca, sem pontuação ou explicações. Se não conseguir identificar, responda "null".`,
-          },
+          { role: 'system', content: systemPrompt },
           { role: 'user', content: text },
         ],
         temperature: 0.1,
@@ -192,30 +340,10 @@ Responda APENAS com o nome ou termo de busca, sem pontuação ou explicações. 
     this.logger.log(`Extraindo dados de contato do texto: ${text.substring(0, 100)}...`);
 
     const client = await this.openaiService.getClient();
-
-    const systemPrompt = `Você é um assistente especializado em extrair informações de contatos profissionais de textos em português.
-
-Analise o texto fornecido e extraia as seguintes informações (se disponíveis):
-- name: Nome completo da pessoa (IMPORTANTE: incluir nome E sobrenome exatamente como mencionado. Ex: "João Silva", "Maria Santos", não apenas "João")
-- company: Nome da empresa onde trabalha
-- position: Cargo ou função
-- phone: Número de telefone (formato brasileiro) - CAMPO OBRIGATÓRIO para salvar contato
-- email: Endereço de email
-- location: Cidade, estado ou país
-- context: Um resumo de como/onde se conheceram ou o contexto do encontro
-- tags: Lista de PONTOS DE CONEXÃO - inclua:
-  * Lugares, eventos, grupos ou comunidades onde se conheceram (ex: "Em Adoração", "SIPAT 2024", "Igreja São Paulo")
-  * Interesses e áreas de atuação profissional (ex: "investidor", "tecnologia", "podcast")
-
-IMPORTANTE:
-- O campo PHONE é OBRIGATÓRIO para salvar um contato - se não estiver no texto, retorne phone como null mas avise no contexto
-- Normalize o telefone para apenas números se possível (ex: 5521987654321)
-- Se uma informação não estiver clara no texto, não invente. Deixe o campo vazio ou null.
-- O campo "context" deve ser um resumo útil do encontro/conversa.
-- Tags devem priorizar ONDE/COMO se conheceram (pontos de conexão), seguido de interesses.
-- Capture o nome EXATAMENTE como mencionado, incluindo sobrenome.
-
-Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`;
+    const systemPrompt = await this.getPrompt(
+      'contact_extraction',
+      this.DEFAULT_PROMPTS.contact_extraction,
+    );
 
     try {
       const response = await client.chat.completions.create({
@@ -271,40 +399,10 @@ Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`;
     this.logger.log(`Extraindo contato e conexões do texto: ${text.substring(0, 100)}...`);
 
     const client = await this.openaiService.getClient();
-
-    const systemPrompt = `Extraia informações de contato do texto. Retorne apenas JSON puro.
-
-Esquema:
-{
-  "contact": {
-    "name": "string (nome completo COM sobrenome, exatamente como mencionado)",
-    "phone": "string|null (telefone formato brasileiro - OBRIGATÓRIO para salvar)",
-    "email": "string|null",
-    "company": "string|null (empresa)",
-    "position": "string|null (cargo)",
-    "location": "string|null (cidade/estado)",
-    "tags": ["string"] (PONTOS DE CONEXÃO: lugares, eventos, grupos onde se conheceram + interesses. Ex: ["Em Adoração", "podcast", "investidor"]),
-    "context": "string (resumo do encontro/conversa)"
-  },
-  "connections": [
-    {
-      "name": "string (nome completo da pessoa mencionada)",
-      "about": "string (descrição/contexto sobre ela)",
-      "tags": ["string"],
-      "phone": "string|null"
-    }
-  ]
-}
-
-Regras:
-- O "contact" é a pessoa PRINCIPAL sobre quem o texto fala
-- NOME: Capture exatamente como mencionado, incluindo sobrenome (ex: "Ianne Higino", não "Ianne")
-- PHONE: OBRIGATÓRIO para salvar um contato. Normalize para apenas números (ex: 5521987654321)
-- TAGS: Priorize PONTOS DE CONEXÃO (onde/como se conheceram) + interesses profissionais
-- "connections" são OUTRAS pessoas mencionadas que o contact conhece ou indicou
-- Se não houver conexões mencionadas, retorne connections: []
-- NÃO invente dados que não estejam explícitos no texto
-- Campos ausentes devem ser null ou array vazio`;
+    const systemPrompt = await this.getPrompt(
+      'contact_with_connections',
+      this.DEFAULT_PROMPTS.contact_with_connections,
+    );
 
     try {
       const response = await client.chat.completions.create({
@@ -383,52 +481,18 @@ Regras:
 
     const client = await this.openaiService.getClient();
 
-    const systemPrompt = `Você é o assistente do NetLoop, uma plataforma de networking que ajuda pessoas a organizar seus contatos profissionais.
-Um novo usuário está se cadastrando via WhatsApp.
+    // Busca prompt do banco e substitui placeholders
+    let systemPrompt = await this.getPrompt(
+      'registration_response',
+      this.DEFAULT_PROMPTS.registration_response,
+    );
 
-DADOS JÁ COLETADOS:
-- Nome: ${extractedData.name || 'NÃO COLETADO'}
-- Telefone confirmado: ${extractedData.phoneConfirmed ? 'SIM' : 'NÃO'}
-- Telefone detectado: ${phoneFormatted || 'NÃO DISPONÍVEL'}
-- Email: ${extractedData.email || 'NÃO COLETADO'}
-
-REGRAS IMPORTANTES:
-1. Seja conversacional e amigável, NUNCA robótico ou formal demais
-2. Use linguagem natural e descontraída (pode usar "você", "a gente", etc)
-3. Respostas curtas e diretas (máximo 2-3 frases)
-4. Se for a primeira mensagem (saudação), apresente-se brevemente e pergunte o nome
-5. APÓS ter o nome, peça confirmação do telefone mostrando o número formatado
-6. Se usuário confirmar o telefone (sim, correto, isso, exato, etc), marque phoneConfirmed: true
-7. Se usuário negar (não, errado, etc), peça para digitar o número correto
-8. Só peça email DEPOIS de ter nome E telefone confirmado
-9. Quando tiver TODOS (nome + telefone confirmado + email válido), confirme o cadastro com entusiasmo
-10. Email deve ter formato válido (algo@algo.algo)
-11. NÃO invente dados - só extraia o que o usuário realmente disse
-
-FLUXO DE ESTADOS:
-1. [Primeira mensagem] → Se apresentar e pedir nome
-2. [TEM NOME] → Mostrar telefone detectado e pedir confirmação
-3. [TELEFONE CONFIRMADO] → Pedir email
-4. [COMPLETED] → Nome + Telefone + Email coletados
-
-EXEMPLOS DE TOM:
-- "Oi! Prazer, sou o assistente do NetLoop 👋 Como posso te chamar?"
-- "Show, Tiago! Detectei que seu número é ${phoneFormatted || '+55 XX XXXXX-XXXX'}. Tá certo?"
-- "Perfeito! Me passa seu email pra finalizar o cadastro?"
-- "Pronto! Cadastro concluído! Agora é só me mandar áudios ou textos sobre pessoas que conheceu 🚀"
-
-RESPONDA APENAS EM JSON VÁLIDO:
-{
-  "response": "Sua mensagem de resposta",
-  "extracted": {
-    "name": "nome extraído ou null se não encontrou",
-    "email": "email extraído ou null se não encontrou",
-    "phoneConfirmed": true/false (só true se o usuário CONFIRMOU explicitamente o telefone)
-  },
-  "isComplete": false
-}
-
-IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmado + email válido) estiverem coletados.`;
+    // Substitui placeholders com valores atuais
+    systemPrompt = systemPrompt
+      .replace(/\{\{name\}\}/g, extractedData.name || 'NÃO COLETADO')
+      .replace(/\{\{phoneConfirmed\}\}/g, extractedData.phoneConfirmed ? 'SIM' : 'NÃO')
+      .replace(/\{\{phoneFormatted\}\}/g, phoneFormatted || 'NÃO DISPONÍVEL')
+      .replace(/\{\{email\}\}/g, extractedData.email || 'NÃO COLETADO');
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: systemPrompt },
@@ -525,21 +589,17 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
 
     const client = await this.openaiService.getClient();
 
-    const systemPrompt = `Você é um assistente virtual amigável do NetLoop, um sistema de gerenciamento de contatos via WhatsApp.
+    // Busca prompt do banco e substitui placeholder
+    let systemPrompt = await this.getPrompt(
+      'greeting_response',
+      this.DEFAULT_PROMPTS.greeting_response,
+    );
 
-Gere uma resposta curta e simpática para uma saudação do usuário.
-
-FUNCIONALIDADES DO SISTEMA:
-- Salvar contatos: usuário envia nome, telefone, email, etc.
-- Buscar contatos: usuário pergunta "quem é João?" ou "me passa o contato do Carlos"
-- Atualizar contatos existentes
-
-REGRAS:
-- Seja breve (máximo 3 linhas)
-- Use tom amigável e profissional
-- Mencione brevemente o que o sistema pode fazer
-- ${userName ? `O nome do usuário é ${userName}` : 'Não sabemos o nome do usuário ainda'}
-- Pode usar 1 emoji no máximo`;
+    // Substitui placeholder de userName
+    const userNameText = userName
+      ? `O nome do usuário é ${userName}`
+      : 'Não sabemos o nome do usuário ainda';
+    systemPrompt = systemPrompt.replace(/\{\{userName\}\}/g, userNameText);
 
     try {
       const response = await client.chat.completions.create({
