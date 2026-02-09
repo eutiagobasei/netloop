@@ -12,7 +12,6 @@ import {
   MessageSquare,
   UserPlus,
   FileText,
-  Link2,
   Sparkles,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
@@ -52,13 +51,6 @@ const PROMPT_METADATA: Record<
     description: 'Extrai dados estruturados de contato a partir do texto enviado pelo usuário',
     icon: UserPlus,
     color: 'green',
-  },
-  prompt_contact_with_connections: {
-    title: 'Contato + Conexões',
-    description:
-      'Extrai dados do contato principal e também de outras pessoas mencionadas no texto',
-    icon: Link2,
-    color: 'orange',
   },
   prompt_registration_response: {
     title: 'Resposta de Registro',
@@ -121,40 +113,6 @@ IMPORTANTE:
 - Capture o nome EXATAMENTE como mencionado, incluindo sobrenome.
 
 Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`,
-
-  prompt_contact_with_connections: `Extraia informações de contato do texto. Retorne apenas JSON puro.
-
-Esquema:
-{
-  "contact": {
-    "name": "string (nome completo COM sobrenome, exatamente como mencionado)",
-    "phone": "string|null (telefone formato brasileiro - OBRIGATÓRIO para salvar)",
-    "email": "string|null",
-    "company": "string|null (empresa)",
-    "position": "string|null (cargo)",
-    "location": "string|null (cidade/estado)",
-    "tags": ["string"] (PONTOS DE CONEXÃO: lugares, eventos, grupos onde se conheceram + interesses. Ex: ["Em Adoração", "podcast", "investidor"]),
-    "context": "string (resumo do encontro/conversa)"
-  },
-  "connections": [
-    {
-      "name": "string (nome completo da pessoa mencionada)",
-      "about": "string (descrição/contexto sobre ela)",
-      "tags": ["string"],
-      "phone": "string|null"
-    }
-  ]
-}
-
-Regras:
-- O "contact" é a pessoa PRINCIPAL sobre quem o texto fala
-- NOME: Capture exatamente como mencionado, incluindo sobrenome (ex: "Ianne Higino", não "Ianne")
-- PHONE: OBRIGATÓRIO para salvar um contato. Normalize para apenas números (ex: 5521987654321)
-- TAGS: Priorize PONTOS DE CONEXÃO (onde/como se conheceram) + interesses profissionais
-- "connections" são OUTRAS pessoas mencionadas que o contact conhece ou indicou
-- Se não houver conexões mencionadas, retorne connections: []
-- NÃO invente dados que não estejam explícitos no texto
-- Campos ausentes devem ser null ou array vazio`,
 
   prompt_registration_response: `Você é o assistente do NetLoop, uma plataforma de networking que ajuda pessoas a organizar seus contatos profissionais.
 Um novo usuário está se cadastrando via WhatsApp.
@@ -224,7 +182,6 @@ const colorClasses: Record<string, { bg: string; icon: string; border: string }>
   blue: { bg: 'bg-blue-100', icon: 'text-blue-600', border: 'border-blue-200' },
   purple: { bg: 'bg-purple-100', icon: 'text-purple-600', border: 'border-purple-200' },
   green: { bg: 'bg-green-100', icon: 'text-green-600', border: 'border-green-200' },
-  orange: { bg: 'bg-orange-100', icon: 'text-orange-600', border: 'border-orange-200' },
   indigo: { bg: 'bg-indigo-100', icon: 'text-indigo-600', border: 'border-indigo-200' },
   pink: { bg: 'bg-pink-100', icon: 'text-pink-600', border: 'border-pink-200' },
 }

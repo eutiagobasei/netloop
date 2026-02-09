@@ -6,7 +6,6 @@ import { EmbeddingService } from './services/embedding.service';
 import {
   ExtractedContactData,
   ExtractionResult,
-  ExtractionWithConnectionsResult,
 } from './dto/extracted-contact.dto';
 
 @Injectable()
@@ -60,13 +59,6 @@ export class AIService {
    */
   async extractContactData(text: string): Promise<ExtractionResult> {
     return this.extractionService.extractContactData(text);
-  }
-
-  /**
-   * Extrai dados de contato + conexões mencionadas de um texto
-   */
-  async extractWithConnections(text: string): Promise<ExtractionWithConnectionsResult> {
-    return this.extractionService.extractWithConnections(text);
   }
 
   /**

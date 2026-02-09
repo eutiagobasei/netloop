@@ -55,7 +55,7 @@ export class ContactsController {
     @CurrentUser('id') userId: string,
     @Body() dto: ExtractTextDto,
   ) {
-    const extraction = await this.aiService.extractWithConnections(dto.text);
+    const extraction = await this.aiService.extractContactData(dto.text);
 
     if (!extraction.success) {
       throw new Error('Falha na extração de dados');

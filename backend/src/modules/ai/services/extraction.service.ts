@@ -4,8 +4,6 @@ import { SettingsService } from '../../settings/settings.service';
 import {
   ExtractedContactData,
   ExtractionResult,
-  ExtractionWithConnectionsResult,
-  MentionedConnectionData,
 } from '../dto/extracted-contact.dto';
 
 export type MessageIntent = 'query' | 'contact_info' | 'update_contact' | 'other';
@@ -91,40 +89,6 @@ IMPORTANTE:
 - Capture o nome EXATAMENTE como mencionado, incluindo sobrenome.
 
 Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`,
-
-    contact_with_connections: `Extraia informações de contato do texto. Retorne apenas JSON puro.
-
-Esquema:
-{
-  "contact": {
-    "name": "string (nome completo COM sobrenome, exatamente como mencionado)",
-    "phone": "string|null (telefone formato brasileiro - OBRIGATÓRIO para salvar)",
-    "email": "string|null",
-    "company": "string|null (empresa)",
-    "position": "string|null (cargo)",
-    "location": "string|null (cidade/estado)",
-    "tags": ["string"] (PONTOS DE CONEXÃO: lugares, eventos, grupos onde se conheceram + interesses. Ex: ["Em Adoração", "podcast", "investidor"]),
-    "context": "string (resumo do encontro/conversa)"
-  },
-  "connections": [
-    {
-      "name": "string (nome completo da pessoa mencionada)",
-      "about": "string (descrição/contexto sobre ela)",
-      "tags": ["string"],
-      "phone": "string|null"
-    }
-  ]
-}
-
-Regras:
-- O "contact" é a pessoa PRINCIPAL sobre quem o texto fala
-- NOME: Capture exatamente como mencionado, incluindo sobrenome (ex: "Ianne Higino", não "Ianne")
-- PHONE: OBRIGATÓRIO para salvar um contato. Normalize para apenas números (ex: 5521987654321)
-- TAGS: Priorize PONTOS DE CONEXÃO (onde/como se conheceram) + interesses profissionais
-- "connections" são OUTRAS pessoas mencionadas que o contact conhece ou indicou
-- Se não houver conexões mencionadas, retorne connections: []
-- NÃO invente dados que não estejam explícitos no texto
-- Campos ausentes devem ser null ou array vazio`,
 
     greeting_response: `Você é um assistente virtual amigável do NetLoop, um sistema de gerenciamento de contatos via WhatsApp.
 
@@ -387,79 +351,6 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
       return {
         success: false,
         data: {},
-        rawResponse: error.message,
-      };
-    }
-  }
-
-  /**
-   * Extrai dados de contato + conexões mencionadas no texto
-   */
-  async extractWithConnections(text: string): Promise<ExtractionWithConnectionsResult> {
-    this.logger.log(`Extraindo contato e conexões do texto: ${text.substring(0, 100)}...`);
-
-    const client = await this.openaiService.getClient();
-    const systemPrompt = await this.getPrompt(
-      'contact_with_connections',
-      this.DEFAULT_PROMPTS.contact_with_connections,
-    );
-
-    try {
-      const response = await client.chat.completions.create({
-        model: 'gpt-4o-mini',
-        messages: [
-          { role: 'system', content: systemPrompt },
-          { role: 'user', content: text },
-        ],
-        response_format: { type: 'json_object' },
-        temperature: 0.3,
-      });
-
-      const content = response.choices[0]?.message?.content;
-
-      if (!content) {
-        throw new Error('Resposta vazia do modelo');
-      }
-
-      const parsed = JSON.parse(content);
-
-      const contact: ExtractedContactData = {
-        name: parsed.contact?.name || undefined,
-        company: parsed.contact?.company || undefined,
-        position: parsed.contact?.position || undefined,
-        phone: parsed.contact?.phone || undefined,
-        email: parsed.contact?.email || undefined,
-        location: parsed.contact?.location || undefined,
-        context: parsed.contact?.context || undefined,
-        tags: parsed.contact?.tags || [],
-      };
-
-      const connections: MentionedConnectionData[] = (parsed.connections || []).map(
-        (conn: any) => ({
-          name: conn.name,
-          about: conn.about || undefined,
-          tags: conn.tags || [],
-          phone: conn.phone || undefined,
-        }),
-      );
-
-      this.logger.log(
-        `Extraído: contato=${contact.name}, conexões=${connections.length}`,
-      );
-
-      return {
-        success: true,
-        contact,
-        connections,
-        rawResponse: content,
-      };
-    } catch (error) {
-      this.logger.error(`Erro ao extrair dados: ${error.message}`);
-
-      return {
-        success: false,
-        contact: {},
-        connections: [],
         rawResponse: error.message,
       };
     }

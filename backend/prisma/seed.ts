@@ -61,44 +61,6 @@ IMPORTANTE:
 Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`,
   },
 
-  prompt_contact_with_connections: {
-    key: 'prompt_contact_with_connections',
-    description: 'Extração de contato + conexões mencionadas',
-    value: `Extraia informações de contato do texto. Retorne apenas JSON puro.
-
-Esquema:
-{
-  "contact": {
-    "name": "string (nome completo COM sobrenome, exatamente como mencionado)",
-    "phone": "string|null (telefone formato brasileiro - OBRIGATÓRIO para salvar)",
-    "email": "string|null",
-    "company": "string|null (empresa)",
-    "position": "string|null (cargo)",
-    "location": "string|null (cidade/estado)",
-    "tags": ["string"] (PONTOS DE CONEXÃO: lugares, eventos, grupos onde se conheceram + interesses. Ex: ["Em Adoração", "podcast", "investidor"]),
-    "context": "string (resumo do encontro/conversa)"
-  },
-  "connections": [
-    {
-      "name": "string (nome completo da pessoa mencionada)",
-      "about": "string (descrição/contexto sobre ela)",
-      "tags": ["string"],
-      "phone": "string|null"
-    }
-  ]
-}
-
-Regras:
-- O "contact" é a pessoa PRINCIPAL sobre quem o texto fala
-- NOME: Capture exatamente como mencionado, incluindo sobrenome (ex: "Ianne Higino", não "Ianne")
-- PHONE: OBRIGATÓRIO para salvar um contato. Normalize para apenas números (ex: 5521987654321)
-- TAGS: Priorize PONTOS DE CONEXÃO (onde/como se conheceram) + interesses profissionais
-- "connections" são OUTRAS pessoas mencionadas que o contact conhece ou indicou
-- Se não houver conexões mencionadas, retorne connections: []
-- NÃO invente dados que não estejam explícitos no texto
-- Campos ausentes devem ser null ou array vazio`,
-  },
-
   prompt_registration_response: {
     key: 'prompt_registration_response',
     description: 'Resposta conversacional para registro de usuário',

@@ -4,8 +4,7 @@ import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { AIService } from '../ai/ai.service';
 import {
-  ExtractionWithConnectionsResult,
-  MentionedConnectionData,
+  ExtractionResult,
 } from '../ai/dto/extracted-contact.dto';
 import { PhoneUtil } from '../../common/utils/phone.util';
 
@@ -716,17 +715,17 @@ export class ContactsService {
   // ============================================
 
   /**
-   * Cria ou atualiza contato a partir de extração + salva conexões mencionadas
+   * Cria ou atualiza contato a partir de extração
    */
   async upsertFromExtraction(
     ownerId: string,
-    extraction: ExtractionWithConnectionsResult,
+    extraction: ExtractionResult,
   ) {
-    if (!extraction.success || !extraction.contact.name) {
+    if (!extraction.success || !extraction.data.name) {
       throw new Error('Dados de extração inválidos');
     }
 
-    const { contact: extractedContact, connections } = extraction;
+    const extractedContact = extraction.data;
 
     // Buscar contato existente por nome ou telefone
     let contact = await this.findExistingContact(ownerId, extractedContact);
@@ -765,11 +764,6 @@ export class ContactsService {
         where: { id: contact.id },
         include: { tags: { include: { tag: true } } },
       }) as typeof contact;
-    }
-
-    // Salvar conexões mencionadas
-    if (connections && connections.length > 0) {
-      await this.saveMentionedConnections(contact.id, connections);
     }
 
     // Gerar embedding assíncrono
@@ -875,49 +869,6 @@ export class ContactsService {
     }
 
     this.logger.log(`${tagNames.length} tags processadas para contato ${contactId}`);
-  }
-
-  /**
-   * Salva conexões mencionadas (upsert por nome)
-   */
-  private async saveMentionedConnections(
-    contactId: string,
-    connections: MentionedConnectionData[],
-  ) {
-    for (const conn of connections) {
-      // Verifica se já existe essa menção
-      const existing = await this.prisma.mentionedConnection.findFirst({
-        where: {
-          contactId,
-          name: { equals: conn.name, mode: 'insensitive' },
-        },
-      });
-
-      if (existing) {
-        // Atualiza descrição se houver nova
-        await this.prisma.mentionedConnection.update({
-          where: { id: existing.id },
-          data: {
-            description: conn.about || existing.description,
-            tags: conn.tags?.length ? conn.tags : existing.tags,
-            phone: conn.phone || existing.phone,
-          },
-        });
-      } else {
-        // Cria nova menção
-        await this.prisma.mentionedConnection.create({
-          data: {
-            contactId,
-            name: conn.name,
-            description: conn.about || null,
-            tags: conn.tags || [],
-            phone: conn.phone || null,
-          },
-        });
-      }
-    }
-
-    this.logger.log(`${connections.length} conexões mencionadas salvas para contato ${contactId}`);
   }
 
   private formatContactResponse(contact: {
