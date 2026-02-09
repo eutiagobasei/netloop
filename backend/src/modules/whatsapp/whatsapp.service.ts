@@ -644,6 +644,13 @@ export class WhatsappService {
 
           // Agenda auto-aprovação
           this.scheduleAutoApproval(messageId, fromPhone);
+        } else {
+          // Dados insuficientes para criar contato
+          await this.evolutionService.sendTextMessage(
+            fromPhone,
+            '🤔 Não consegui identificar os dados do contato. ' +
+              'Pode me informar o *nome completo* e *telefone* da pessoa?',
+          );
         }
 
         this.logger.log(`Mensagem ${messageId} processada com sucesso`);
