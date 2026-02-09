@@ -5,7 +5,6 @@ import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import {
   LayoutDashboard,
-  Settings,
   Key,
   MessageSquare,
   LogOut,
@@ -13,7 +12,6 @@ import {
   ChevronDown,
   Shield,
   User,
-  UserPlus,
   Users,
   Brain,
 } from 'lucide-react'
@@ -27,7 +25,6 @@ const adminNavigation = [
   { name: 'Usuários', href: '/users', icon: Users },
   { name: 'API Keys', href: '/settings/api-keys', icon: Key },
   { name: 'Evolution API', href: '/settings/evolution', icon: MessageSquare },
-  { name: 'Boas-vindas', href: '/settings/welcome', icon: UserPlus },
   { name: 'Prompts IA', href: '/settings/prompts', icon: Brain },
 ]
 
