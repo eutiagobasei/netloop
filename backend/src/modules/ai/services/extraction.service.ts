@@ -516,4 +516,47 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
       };
     }
   }
+
+  /**
+   * Gera resposta amigável para saudações e mensagens genéricas
+   */
+  async generateGreetingResponse(userName?: string): Promise<string> {
+    this.logger.log(`Gerando resposta de saudação para usuário: ${userName || 'desconhecido'}`);
+
+    const client = await this.openaiService.getClient();
+
+    const systemPrompt = `Você é um assistente virtual amigável do NetLoop, um sistema de gerenciamento de contatos via WhatsApp.
+
+Gere uma resposta curta e simpática para uma saudação do usuário.
+
+FUNCIONALIDADES DO SISTEMA:
+- Salvar contatos: usuário envia nome, telefone, email, etc.
+- Buscar contatos: usuário pergunta "quem é João?" ou "me passa o contato do Carlos"
+- Atualizar contatos existentes
+
+REGRAS:
+- Seja breve (máximo 3 linhas)
+- Use tom amigável e profissional
+- Mencione brevemente o que o sistema pode fazer
+- ${userName ? `O nome do usuário é ${userName}` : 'Não sabemos o nome do usuário ainda'}
+- Pode usar 1 emoji no máximo`;
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Gere uma saudação de boas-vindas' },
+        ],
+        temperature: 0.7,
+        max_tokens: 150,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      return content || 'Olá! Como posso ajudar?';
+    } catch (error) {
+      this.logger.error(`Erro ao gerar resposta de saudação: ${error.message}`);
+      return 'Olá! Como posso ajudar?';
+    }
+  }
 }

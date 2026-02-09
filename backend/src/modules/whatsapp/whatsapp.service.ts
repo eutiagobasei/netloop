@@ -650,7 +650,7 @@ export class WhatsappService {
         return;
       }
 
-      // 4. OUTROS (saudação, etc) → apenas marca como processada
+      // 4. OUTROS (saudação, etc) → gera resposta amigável via IA
       await this.prisma.whatsappMessage.update({
         where: { id: messageId },
         data: {
@@ -661,7 +661,12 @@ export class WhatsappService {
         },
       });
 
-      this.logger.log(`Mensagem ${messageId} ignorada (intent: ${intent})`);
+      // Busca nome do usuário para personalizar resposta
+      const user = await this.usersService.findByPhone(fromPhone);
+      const greetingResponse = await this.aiService.generateGreetingResponse(user?.name);
+      await this.evolutionService.sendTextMessage(fromPhone, greetingResponse);
+
+      this.logger.log(`Mensagem ${messageId} respondida com saudação IA`);
     } catch (error) {
       this.logger.error(`Erro ao processar mensagem ${messageId}:`, error);
 

@@ -114,4 +114,11 @@ export class AIService {
   clearCache(): void {
     this.openaiService.clearClient();
   }
+
+  /**
+   * Gera resposta amigável para saudações e mensagens genéricas
+   */
+  async generateGreetingResponse(userName?: string): Promise<string> {
+    return this.extractionService.generateGreetingResponse(userName);
+  }
 }
