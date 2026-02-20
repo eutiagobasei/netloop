@@ -16,12 +16,18 @@ const AUTO_APPROVE_TIMEOUT_MS = 2 * 60 * 1000;
 // Timeout para expirar estado de atualização (5 minutos)
 const UPDATE_STATE_TIMEOUT_MS = 5 * 60 * 1000;
 
+// Timeout para expirar pedido de contexto (3 minutos)
+const CONTEXT_REQUEST_TIMEOUT_MS = 3 * 60 * 1000;
+
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
 
   // Estado de atualização pendente: Map<phone, { contactId, contactName, timestamp }>
   private pendingUpdates = new Map<string, { contactId: string; contactName: string; timestamp: number }>();
+
+  // Estado de pedido de contexto pendente: Map<phone, { contactId, contactName, timestamp }>
+  private pendingContextRequests = new Map<string, { contactId: string; contactName: string; timestamp: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -263,6 +269,12 @@ export class WhatsappService {
       return this.handleUpdateResponse(userId, fromPhone, pendingUpdate, content, messageId);
     }
 
+    // Verifica se há pedido de contexto pendente
+    const pendingContext = this.getPendingContextRequest(fromPhone);
+    if (pendingContext && content) {
+      return this.handleContextResponse(userId, fromPhone, pendingContext, content, messageId);
+    }
+
     // Se não tem conteúdo e é texto, ignora
     if (!content && messageType === MessageType.TEXT) {
       this.logger.warn('Mensagem sem conteúdo de texto');
@@ -472,7 +484,7 @@ export class WhatsappService {
 
     try {
       // Cria o contato e a conexão
-      await this.createContactAndConnection(message.userId, extractedData, message.transcription || message.content);
+      const contact = await this.createContactAndConnection(message.userId, extractedData, message.transcription || message.content);
 
       // Atualiza o status da mensagem
       await this.prisma.whatsappMessage.update({
@@ -491,6 +503,9 @@ export class WhatsappService {
 
       await this.evolutionService.sendTextMessage(message.fromPhone, confirmMessage);
 
+      // Pergunta sobre contexto adicional após 1.5s
+      this.askForContextInfo(message.fromPhone, contact.id, extractedData.name);
+
       return { status: 'approved', contactName: extractedData.name };
     } catch (error) {
       this.logger.error('Erro ao criar contato:', error);
@@ -500,6 +515,138 @@ export class WhatsappService {
         message.fromPhone,
         `❌ Erro ao salvar contato *${extractedData.name}*. Tente enviar novamente.`
       ).catch(() => {}); // Ignora erro do envio
+
+      return { status: 'error' };
+    }
+  }
+
+  /**
+   * Pergunta ao usuário se quer adicionar informações de contexto sobre o contato
+   */
+  private askForContextInfo(fromPhone: string, contactId: string, contactName: string) {
+    setTimeout(async () => {
+      try {
+        const contextQuestion = `💭 Quer adicionar alguma informação sobre *${contactName}*?\n\n_Exemplo: "Conheci na conferência de tech", "Colega de trabalho na empresa X", "Amigo do João"_\n\n_Responda com o contexto ou ignore para pular._`;
+
+        await this.evolutionService.sendTextMessage(fromPhone, contextQuestion);
+
+        // Salva estado de pedido de contexto pendente
+        this.setPendingContextRequest(fromPhone, contactId, contactName);
+
+        this.logger.log(`Pergunta de contexto enviada para ${fromPhone} sobre ${contactName}`);
+      } catch (error) {
+        this.logger.error(`Erro ao enviar pergunta de contexto: ${error.message}`);
+      }
+    }, 1500);
+  }
+
+  /**
+   * Salva estado de pedido de contexto pendente
+   */
+  private setPendingContextRequest(phone: string, contactId: string, contactName: string) {
+    this.pendingContextRequests.set(phone, {
+      contactId,
+      contactName,
+      timestamp: Date.now(),
+    });
+    this.logger.log(`Estado de contexto pendente salvo para ${phone}: ${contactName} (${contactId})`);
+  }
+
+  /**
+   * Obtém estado de pedido de contexto pendente (se não expirou)
+   */
+  private getPendingContextRequest(phone: string): { contactId: string; contactName: string } | null {
+    const pending = this.pendingContextRequests.get(phone);
+    if (!pending) return null;
+
+    // Verifica se expirou
+    if (Date.now() - pending.timestamp > CONTEXT_REQUEST_TIMEOUT_MS) {
+      this.pendingContextRequests.delete(phone);
+      this.logger.log(`Estado de contexto pendente expirado para ${phone}`);
+      return null;
+    }
+
+    return { contactId: pending.contactId, contactName: pending.contactName };
+  }
+
+  /**
+   * Limpa estado de pedido de contexto pendente
+   */
+  private clearPendingContextRequest(phone: string) {
+    this.pendingContextRequests.delete(phone);
+    this.logger.log(`Estado de contexto pendente limpo para ${phone}`);
+  }
+
+  /**
+   * Processa resposta de contexto adicional para o contato
+   */
+  private async handleContextResponse(
+    userId: string,
+    fromPhone: string,
+    pendingContext: { contactId: string; contactName: string },
+    content: string,
+    messageId: string
+  ) {
+    this.logger.log(`Processando contexto adicional para ${pendingContext.contactName}: "${content}"`);
+
+    try {
+      // Limpa o estado de contexto pendente
+      this.clearPendingContextRequest(fromPhone);
+
+      // Busca o contato atual para pegar o contexto existente
+      const existingContact = await this.prisma.contact.findUnique({
+        where: { id: pendingContext.contactId },
+        select: { context: true, notes: true },
+      });
+
+      // Monta o novo contexto (acumula com existente se houver)
+      const existingContext = existingContact?.context || '';
+      const newContext = existingContext
+        ? `${existingContext}\n\n${content}`
+        : content;
+
+      // Atualiza o contato com o novo contexto
+      await this.prisma.contact.update({
+        where: { id: pendingContext.contactId },
+        data: {
+          context: newContext,
+          notes: existingContact?.notes
+            ? `${existingContact.notes}\n${content}`
+            : content,
+        },
+      });
+
+      // Salva a mensagem
+      await this.prisma.whatsappMessage.create({
+        data: {
+          userId,
+          externalId: messageId,
+          fromPhone,
+          type: MessageType.TEXT,
+          content,
+          processed: true,
+          processedAt: new Date(),
+          approvalStatus: 'APPROVED',
+          contactCreated: false,
+        },
+      });
+
+      // Envia confirmação
+      await this.evolutionService.sendTextMessage(
+        fromPhone,
+        `✨ Contexto adicionado a *${pendingContext.contactName}*! Seu contato agora está mais completo.`
+      );
+
+      this.logger.log(`Contexto adicionado para ${pendingContext.contactName}`);
+      return { status: 'context_added', contactId: pendingContext.contactId };
+
+    } catch (error) {
+      this.logger.error(`Erro ao adicionar contexto: ${error.message}`);
+
+      await this.evolutionService.sendTextMessage(
+        fromPhone,
+        `❌ Erro ao adicionar contexto. Tente novamente.`
+      ).catch(() => {});
 
       return { status: 'error' };
     }
