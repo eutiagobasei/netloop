@@ -181,15 +181,20 @@ export class EvolutionService {
 
       const data = await response.json();
 
-      if (data.base64) {
+      this.logger.log(`Resposta Evolution downloadMedia: ${JSON.stringify(data).substring(0, 200)}`);
+
+      // A Evolution pode retornar base64 diretamente ou dentro de um objeto
+      const base64Content = data.base64 || data.data?.base64 || data.mediaMessage?.base64;
+
+      if (base64Content) {
         // Remove prefixo data:audio/ogg;base64, se existir
-        const base64Data = data.base64.replace(/^data:[^;]+;base64,/, '');
+        const base64Data = base64Content.replace(/^data:[^;]+;base64,/, '');
         const buffer = Buffer.from(base64Data, 'base64');
         this.logger.log(`Mídia baixada com sucesso: ${buffer.length} bytes`);
         return buffer;
       }
 
-      this.logger.error('Resposta da Evolution não contém base64');
+      this.logger.error(`Resposta da Evolution não contém base64. Keys: ${Object.keys(data).join(', ')}`);
       return null;
     } catch (error) {
       this.logger.error('Erro ao baixar mídia:', error);
