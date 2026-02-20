@@ -271,8 +271,25 @@ export class WhatsappService {
 
     // Verifica se há pedido de contexto pendente
     const pendingContext = this.getPendingContextRequest(fromPhone);
-    if (pendingContext && content) {
-      return this.handleContextResponse(userId, fromPhone, pendingContext, content, messageId);
+    if (pendingContext) {
+      // Se for áudio, transcreve primeiro
+      if (messageType === MessageType.AUDIO && messageKey) {
+        try {
+          const transcription = await this.transcribeAudioViaEvolution(messageKey);
+          if (transcription) {
+            return this.handleContextResponse(userId, fromPhone, pendingContext, transcription, messageId);
+          }
+        } catch (error) {
+          this.logger.error(`Erro ao transcrever áudio para contexto: ${error.message}`);
+          await this.evolutionService.sendTextMessage(
+            fromPhone,
+            '🎤 Não consegui entender o áudio. Por favor, envie o contexto por texto.'
+          );
+          return { status: 'audio_transcription_failed' };
+        }
+      } else if (content) {
+        return this.handleContextResponse(userId, fromPhone, pendingContext, content, messageId);
+      }
     }
 
     // Se não tem conteúdo e é texto, ignora
