@@ -5,12 +5,16 @@ import { CreateConnectionDto } from './dto/create-connection.dto';
 import { UpdateConnectionDto } from './dto/update-connection.dto';
 import { GraphData, GraphNode, GraphEdge } from './types/graph.types';
 import { PhoneUtil } from '@/common/utils/phone.util';
+import { EmbeddingService } from '../ai/services/embedding.service';
 
 @Injectable()
 export class ConnectionsService {
   private readonly logger = new Logger(ConnectionsService.name);
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly embeddingService: EmbeddingService,
+  ) {}
 
   async create(userId: string, dto: CreateConnectionDto) {
     // Verifica se o contato existe e pertence ao usuário
@@ -36,7 +40,7 @@ export class ConnectionsService {
       throw new ConflictException('Conexão já existe com este contato');
     }
 
-    return this.prisma.connection.create({
+    const connection = await this.prisma.connection.create({
       data: {
         fromUserId: userId,
         contactId: dto.contactId,
@@ -55,6 +59,15 @@ export class ConnectionsService {
         },
       },
     });
+
+    // Gera embedding se houver contexto (async, não bloqueia)
+    if (dto.context) {
+      this.embeddingService.updateConnectionEmbedding(connection.id).catch((err) => {
+        this.logger.error(`Erro ao gerar embedding para conexão ${connection.id}: ${err.message}`);
+      });
+    }
+
+    return connection;
   }
 
   async findAll(userId: string) {
@@ -84,13 +97,32 @@ export class ConnectionsService {
       throw new NotFoundException('Conexão não encontrada');
     }
 
-    return this.prisma.connection.update({
+    const updated = await this.prisma.connection.update({
       where: { id },
       data: dto,
       include: {
         contact: true,
       },
     });
+
+    // Regenera embedding se o contexto mudou
+    if (dto.context !== undefined && dto.context !== connection.context) {
+      if (dto.context) {
+        this.embeddingService.updateConnectionEmbedding(id).catch((err) => {
+          this.logger.error(`Erro ao regenerar embedding para conexão ${id}: ${err.message}`);
+        });
+      } else {
+        // Se contexto foi removido, limpa o embedding
+        this.prisma.$executeRawUnsafe(
+          `UPDATE connections SET embedding = NULL WHERE id = $1`,
+          id,
+        ).catch((err) => {
+          this.logger.error(`Erro ao limpar embedding da conexão ${id}: ${err.message}`);
+        });
+      }
+    }
+
+    return updated;
   }
 
   async delete(id: string, userId: string) {

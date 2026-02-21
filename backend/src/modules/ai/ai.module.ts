@@ -21,6 +21,6 @@ import { ContactsModule } from '../contacts/contacts.module';
     ExtractionService,
     EmbeddingService,
   ],
-  exports: [AIService, ExtractionService],
+  exports: [AIService, ExtractionService, EmbeddingService],
 })
 export class AIModule {}

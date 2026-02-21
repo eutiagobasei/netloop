@@ -16,13 +16,17 @@ import { UpdateConnectionDto } from './dto/update-connection.dto';
 import { GraphData } from './types/graph.types';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { EmbeddingService } from '../ai/services/embedding.service';
 
 @ApiTags('Connections')
 @ApiBearerAuth()
 @UseGuards(JwtAuthGuard)
 @Controller('connections')
 export class ConnectionsController {
-  constructor(private readonly connectionsService: ConnectionsService) {}
+  constructor(
+    private readonly connectionsService: ConnectionsService,
+    private readonly embeddingService: EmbeddingService,
+  ) {}
 
   @Post()
   @ApiOperation({ summary: 'Criar nova conexão' })
@@ -37,6 +41,19 @@ export class ConnectionsController {
   @ApiResponse({ status: 200, description: 'Lista de conexões' })
   async findAll(@CurrentUser('id') userId: string) {
     return this.connectionsService.findAll(userId);
+  }
+
+  @Get('search')
+  @ApiOperation({ summary: 'Busca semântica de conexões' })
+  @ApiQuery({ name: 'q', required: true, type: String, description: 'Termo de busca (ex: "quem conheci no evento SOMA")' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Limite de resultados (padrão: 10)' })
+  @ApiResponse({ status: 200, description: 'Conexões encontradas por similaridade semântica' })
+  async searchConnections(
+    @CurrentUser('id') userId: string,
+    @Query('q') query: string,
+    @Query('limit') limit?: number,
+  ) {
+    return this.embeddingService.searchSimilarConnections(query, userId, limit || 10);
   }
 
   @Get('graph')

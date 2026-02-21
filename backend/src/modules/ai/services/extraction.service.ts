@@ -5,6 +5,7 @@ import {
   ExtractedContactData,
   ExtractionResult,
 } from '../dto/extracted-contact.dto';
+import { DEFAULT_PROMPTS, AI_CONFIG, PromptKey } from '../constants/default-prompts';
 
 export type MessageIntent = 'query' | 'contact_info' | 'update_contact' | 'register_intent' | 'other';
 
@@ -33,127 +34,14 @@ export class ExtractionService {
   /**
    * Obtém um prompt do banco de dados ou retorna o padrão
    */
-  private async getPrompt(key: string, defaultPrompt: string): Promise<string> {
+  private async getPrompt(key: PromptKey): Promise<string> {
     try {
       const setting = await this.settingsService.getDecryptedValue(`prompt_${key}`);
-      return setting || defaultPrompt;
+      return setting || DEFAULT_PROMPTS[key];
     } catch {
-      return defaultPrompt;
+      return DEFAULT_PROMPTS[key];
     }
   }
-
-  /**
-   * Prompts padrão (fallback se não estiverem no banco)
-   */
-  private readonly DEFAULT_PROMPTS = {
-    intent_classification: `Classifique a intenção da mensagem:
-- "query": usuário quer BUSCAR informação sobre alguém (ex: "quem é João?", "o que sabe sobre Maria?", "me fala do Pedro", "conhece algum advogado?")
-- "contact_info": usuário está INFORMANDO dados de um contato para cadastrar. DEVE conter informações substanciais como: nome + empresa, nome + cargo, nome + contexto de como conheceu, etc. NÃO classifique como contact_info se for apenas um nome solto ou saudação.
-- "update_contact": usuário quer ATUALIZAR dados de um contato existente (ex: "atualizar dados de João", "editar informações do Pedro", "corrigir o email da Maria")
-- "register_intent": usuário demonstra INTENÇÃO de cadastrar um contato mas NÃO envia os dados ainda (ex: "quero salvar um contato", "cadastrar novo contato", "adicionar pessoa", "salvar contato novo")
-- "other": saudação (oi, olá, bom dia), agradecimento, confirmação (ok, sim), ou mensagem sem informação de contato útil
-
-IMPORTANTE: Mensagens como "Olá", "Opa", "Oi tudo bem?", "Bom dia", apenas um nome sem contexto, ou saudações em geral são SEMPRE "other".
-
-Responda APENAS com: query, contact_info, update_contact, register_intent ou other`,
-
-    query_subject: `Extraia o NOME da pessoa ou o ASSUNTO que o usuário está buscando.
-Exemplos:
-- "quem é o João?" → "João"
-- "o que você sabe sobre Maria Silva?" → "Maria Silva"
-- "me fala do Pedro" → "Pedro"
-- "conhece algum advogado?" → "advogado"
-- "tem alguém de marketing?" → "marketing"
-
-Responda APENAS com o nome ou termo de busca, sem pontuação ou explicações. Se não conseguir identificar, responda "null".`,
-
-    contact_extraction: `Você é um assistente especializado em extrair informações de contatos profissionais de textos em português.
-
-Analise o texto fornecido e extraia as seguintes informações (se disponíveis):
-- name: Nome completo da pessoa (IMPORTANTE: incluir nome E sobrenome exatamente como mencionado. Ex: "João Silva", "Maria Santos", não apenas "João")
-- company: Nome da empresa onde trabalha
-- position: Cargo ou função
-- phone: Número de telefone (formato brasileiro) - CAMPO OBRIGATÓRIO para salvar contato
-- email: Endereço de email
-- location: Cidade, estado ou país
-- context: Um resumo de como/onde se conheceram ou o contexto do encontro
-- tags: Lista de PONTOS DE CONEXÃO - inclua:
-  * Lugares, eventos, grupos ou comunidades onde se conheceram (ex: "Em Adoração", "SIPAT 2024", "Igreja São Paulo")
-  * Interesses e áreas de atuação profissional (ex: "investidor", "tecnologia", "podcast")
-
-IMPORTANTE:
-- O campo PHONE é OBRIGATÓRIO para salvar um contato - se não estiver no texto, retorne phone como null mas avise no contexto
-- Normalize o telefone para apenas números se possível (ex: 5521987654321)
-- Se uma informação não estiver clara no texto, não invente. Deixe o campo vazio ou null.
-- O campo "context" deve ser um resumo útil do encontro/conversa.
-- Tags devem priorizar ONDE/COMO se conheceram (pontos de conexão), seguido de interesses.
-- Capture o nome EXATAMENTE como mencionado, incluindo sobrenome.
-
-Retorne APENAS um JSON válido com os campos acima. Não inclua explicações.`,
-
-    greeting_response: `Você é um assistente virtual amigável do NetLoop, um sistema de gerenciamento de contatos via WhatsApp.
-
-Gere uma resposta curta e simpática para uma saudação do usuário.
-
-FUNCIONALIDADES DO SISTEMA:
-- Salvar contatos: usuário envia nome, telefone, email, etc.
-- Buscar contatos: usuário pergunta "quem é João?" ou "me passa o contato do Carlos"
-- Atualizar contatos existentes
-
-REGRAS:
-- Seja breve (máximo 3 linhas)
-- Use tom amigável e profissional
-- Mencione brevemente o que o sistema pode fazer
-- {{userName}}
-- Pode usar 1 emoji no máximo`,
-
-    registration_response: `Você é o assistente do NetLoop, uma plataforma de networking que ajuda pessoas a organizar seus contatos profissionais.
-Um novo usuário está se cadastrando via WhatsApp.
-
-DADOS JÁ COLETADOS:
-- Nome: {{name}}
-- Telefone confirmado: {{phoneConfirmed}}
-- Telefone detectado: {{phoneFormatted}}
-- Email: {{email}}
-
-REGRAS IMPORTANTES:
-1. Seja conversacional e amigável, NUNCA robótico ou formal demais
-2. Use linguagem natural e descontraída (pode usar "você", "a gente", etc)
-3. Respostas curtas e diretas (máximo 2-3 frases)
-4. Se for a primeira mensagem (saudação), apresente-se brevemente e pergunte o nome
-5. APÓS ter o nome, peça confirmação do telefone mostrando o número formatado
-6. Se usuário confirmar o telefone (sim, correto, isso, exato, etc), marque phoneConfirmed: true
-7. Se usuário negar (não, errado, etc), peça para digitar o número correto
-8. Só peça email DEPOIS de ter nome E telefone confirmado
-9. Quando tiver TODOS (nome + telefone confirmado + email válido), confirme o cadastro com entusiasmo
-10. Email deve ter formato válido (algo@algo.algo)
-11. NÃO invente dados - só extraia o que o usuário realmente disse
-
-FLUXO DE ESTADOS:
-1. [Primeira mensagem] → Se apresentar e pedir nome
-2. [TEM NOME] → Mostrar telefone detectado e pedir confirmação
-3. [TELEFONE CONFIRMADO] → Pedir email
-4. [COMPLETED] → Nome + Telefone + Email coletados
-
-EXEMPLOS DE TOM:
-- "Oi! Prazer, sou o assistente do NetLoop 👋 Como posso te chamar?"
-- "Show, {{name}}! Detectei que seu número é {{phoneFormatted}}. Tá certo?"
-- "Perfeito! Me passa seu email pra finalizar o cadastro?"
-- "Pronto! Cadastro concluído! Agora é só me mandar áudios ou textos sobre pessoas que conheceu 🚀"
-
-RESPONDA APENAS EM JSON VÁLIDO:
-{
-  "response": "Sua mensagem de resposta",
-  "extracted": {
-    "name": "nome extraído ou null se não encontrou",
-    "email": "email extraído ou null se não encontrou",
-    "phoneConfirmed": true/false
-  },
-  "isComplete": false
-}
-
-IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmado + email válido) estiverem coletados.`,
-  };
 
   /**
    * Lista de saudações comuns que devem ser ignoradas
@@ -208,10 +96,7 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
     }
 
     const client = await this.openaiService.getClient();
-    const systemPrompt = await this.getPrompt(
-      'intent_classification',
-      this.DEFAULT_PROMPTS.intent_classification,
-    );
+    const systemPrompt = await this.getPrompt('intent_classification');
 
     try {
       const response = await client.chat.completions.create({
@@ -244,10 +129,7 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
     this.logger.log(`Extraindo assunto da query: ${text.substring(0, 50)}...`);
 
     const client = await this.openaiService.getClient();
-    const systemPrompt = await this.getPrompt(
-      'query_subject',
-      this.DEFAULT_PROMPTS.query_subject,
-    );
+    const systemPrompt = await this.getPrompt('query_subject');
 
     try {
       const response = await client.chat.completions.create({
@@ -305,10 +187,7 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
     this.logger.log(`Extraindo dados de contato do texto: ${text.substring(0, 100)}...`);
 
     const client = await this.openaiService.getClient();
-    const systemPrompt = await this.getPrompt(
-      'contact_extraction',
-      this.DEFAULT_PROMPTS.contact_extraction,
-    );
+    const systemPrompt = await this.getPrompt('contact_extraction');
 
     try {
       const response = await client.chat.completions.create({
@@ -374,10 +253,7 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
     const client = await this.openaiService.getClient();
 
     // Busca prompt do banco e substitui placeholders
-    let systemPrompt = await this.getPrompt(
-      'registration_response',
-      this.DEFAULT_PROMPTS.registration_response,
-    );
+    let systemPrompt = await this.getPrompt('registration_response');
 
     // Substitui placeholders com valores atuais
     systemPrompt = systemPrompt
@@ -482,15 +358,12 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
     const client = await this.openaiService.getClient();
 
     // Busca prompt do banco e substitui placeholder
-    let systemPrompt = await this.getPrompt(
-      'greeting_response',
-      this.DEFAULT_PROMPTS.greeting_response,
-    );
+    let systemPrompt = await this.getPrompt('greeting_response');
 
     // Substitui placeholder de userName
     const userNameText = userName
-      ? `O nome do usuário é ${userName}`
-      : 'Não sabemos o nome do usuário ainda';
+      ? `O nome do usuário é ${userName}. Use o nome na saudação.`
+      : 'Não sabemos o nome do usuário ainda. Não use nome na saudação.';
     systemPrompt = systemPrompt.replace(/\{\{userName\}\}/g, userNameText);
 
     try {
@@ -509,6 +382,214 @@ IMPORTANTE: isComplete só deve ser true quando TODOS (nome + telefone confirmad
     } catch (error) {
       this.logger.error(`Erro ao gerar resposta de saudação: ${error.message}`);
       return 'Olá! Como posso ajudar?';
+    }
+  }
+
+  /**
+   * Gera resposta formatada para resultados de busca
+   */
+  async generateSearchResponse(params: {
+    searchTerm: string;
+    contacts: Array<{
+      name: string;
+      company?: string;
+      position?: string;
+      phone?: string;
+      context?: string;
+    }>;
+  }): Promise<string> {
+    const { searchTerm, contacts } = params;
+    this.logger.log(`Gerando resposta de busca para: ${searchTerm}, ${contacts.length} resultados`);
+
+    const client = await this.openaiService.getClient();
+
+    let systemPrompt = await this.getPrompt('search_response');
+
+    // Substitui placeholders
+    systemPrompt = systemPrompt
+      .replace(/\{\{searchTerm\}\}/g, searchTerm)
+      .replace(/\{\{resultCount\}\}/g, contacts.length.toString())
+      .replace(/\{\{contacts\}\}/g, JSON.stringify(contacts, null, 2));
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Formate a resposta de busca' },
+        ],
+        temperature: 0.5,
+        max_tokens: 500,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      return content || `Encontrei ${contacts.length} contato(s) para "${searchTerm}".`;
+    } catch (error) {
+      this.logger.error(`Erro ao gerar resposta de busca: ${error.message}`);
+      return `Encontrei ${contacts.length} contato(s) para "${searchTerm}".`;
+    }
+  }
+
+  /**
+   * Gera confirmação de salvamento de contato
+   */
+  async generateSaveConfirmation(contact: {
+    name: string;
+    company?: string;
+    position?: string;
+    phone?: string;
+    email?: string;
+    context?: string;
+    tags?: string[];
+  }): Promise<string> {
+    this.logger.log(`Gerando confirmação de salvamento para: ${contact.name}`);
+
+    const client = await this.openaiService.getClient();
+
+    let systemPrompt = await this.getPrompt('save_confirmation');
+
+    // Substitui placeholders
+    systemPrompt = systemPrompt
+      .replace(/\{\{name\}\}/g, contact.name || '')
+      .replace(/\{\{company\}\}/g, contact.company || 'não informada')
+      .replace(/\{\{position\}\}/g, contact.position || 'não informado')
+      .replace(/\{\{phone\}\}/g, contact.phone || 'não informado')
+      .replace(/\{\{email\}\}/g, contact.email || 'não informado')
+      .replace(/\{\{context\}\}/g, contact.context || 'não informado')
+      .replace(/\{\{tags\}\}/g, contact.tags?.join(', ') || 'nenhuma');
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Confirme o salvamento' },
+        ],
+        temperature: 0.7,
+        max_tokens: 200,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      return content || `✅ Contato de ${contact.name} salvo com sucesso!`;
+    } catch (error) {
+      this.logger.error(`Erro ao gerar confirmação: ${error.message}`);
+      return `✅ Contato de ${contact.name} salvo com sucesso!`;
+    }
+  }
+
+  /**
+   * Gera resposta de erro amigável
+   */
+  async generateErrorResponse(errorType: string, errorDetails?: string): Promise<string> {
+    this.logger.log(`Gerando resposta de erro: ${errorType}`);
+
+    const client = await this.openaiService.getClient();
+
+    let systemPrompt = await this.getPrompt('error_response');
+
+    // Substitui placeholders
+    systemPrompt = systemPrompt
+      .replace(/\{\{errorType\}\}/g, errorType)
+      .replace(/\{\{errorDetails\}\}/g, errorDetails || 'Sem detalhes adicionais');
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Gere uma mensagem de erro amigável' },
+        ],
+        temperature: 0.5,
+        max_tokens: 150,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      return content || 'Desculpe, ocorreu um erro. Pode tentar novamente?';
+    } catch (error) {
+      this.logger.error(`Erro ao gerar resposta de erro: ${error.message}`);
+      return 'Desculpe, ocorreu um erro. Pode tentar novamente?';
+    }
+  }
+
+  /**
+   * Gera pergunta sobre contexto/dados faltantes do contato
+   */
+  async generateContextQuestion(params: {
+    name: string;
+    phone?: string;
+    missingFields: string[];
+  }): Promise<string> {
+    const { name, phone, missingFields } = params;
+    this.logger.log(`Gerando pergunta de contexto para: ${name}, faltando: ${missingFields.join(', ')}`);
+
+    const client = await this.openaiService.getClient();
+
+    let systemPrompt = await this.getPrompt('context_question');
+
+    // Substitui placeholders
+    systemPrompt = systemPrompt
+      .replace(/\{\{name\}\}/g, name)
+      .replace(/\{\{phone\}\}/g, phone || 'não informado')
+      .replace(/\{\{missingFields\}\}/g, missingFields.join(', '));
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Pergunte sobre o dado faltante' },
+        ],
+        temperature: 0.7,
+        max_tokens: 100,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      return content || `Salvei ${name}! Onde vocês se conheceram?`;
+    } catch (error) {
+      this.logger.error(`Erro ao gerar pergunta de contexto: ${error.message}`);
+      return `Salvei ${name}! Onde vocês se conheceram?`;
+    }
+  }
+
+  /**
+   * Gera confirmação de atualização de contato
+   */
+  async generateUpdateConfirmation(params: {
+    name: string;
+    field: string;
+    oldValue: string;
+    newValue: string;
+  }): Promise<string> {
+    const { name, field, oldValue, newValue } = params;
+    this.logger.log(`Gerando confirmação de atualização: ${name}, ${field}`);
+
+    const client = await this.openaiService.getClient();
+
+    let systemPrompt = await this.getPrompt('update_confirmation');
+
+    // Substitui placeholders
+    systemPrompt = systemPrompt
+      .replace(/\{\{name\}\}/g, name)
+      .replace(/\{\{field\}\}/g, field)
+      .replace(/\{\{oldValue\}\}/g, oldValue || 'não informado')
+      .replace(/\{\{newValue\}\}/g, newValue);
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: 'Confirme a atualização' },
+        ],
+        temperature: 0.5,
+        max_tokens: 100,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      return content || `✅ ${field} de ${name} atualizado!`;
+    } catch (error) {
+      this.logger.error(`Erro ao gerar confirmação de atualização: ${error.message}`);
+      return `✅ ${field} de ${name} atualizado!`;
     }
   }
 }
