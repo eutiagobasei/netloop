@@ -505,13 +505,16 @@ export class ConnectionsService {
       // Determina a área: cargo > empresa > fallback
       const area = c.position || c.company || 'Área não especificada';
 
+      const connectorPhone = connector?.phone || ownerPhone;
+      this.logger.log(`[2º grau] Retornando connector: name=${connector?.name}, phone=${connector?.phone}, ownerPhone=${ownerPhone}, final=${connectorPhone}`);
+
       return {
         id: c.id,
         area, // Mostra cargo ou empresa
         connectorName: connector?.name || c.owner.name, // Quem pode conectar
         connectorId: connector?.id || null,
         // Usa o telefone do contato de 1º grau (com 9º dígito) em vez do telefone do usuário
-        connectorPhone: connector?.phone || ownerPhone,
+        connectorPhone,
         // NÃO expõe: nome, telefone, email do contato de 2º grau
       };
     });
