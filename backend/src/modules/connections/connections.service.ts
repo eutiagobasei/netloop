@@ -401,6 +401,8 @@ export class ConnectionsService {
     // quem do seu 1º grau pode te conectar com alguém de uma área/profissão
     // NÃO expõe dados pessoais do contato de 2º grau
 
+    this.logger.log(`[2º grau] Buscando para userId=${userId}, search="${search}"`);
+
     if (!search) {
       // Sem busca, não retorna nada - precisa de um termo de busca
       return [];
@@ -416,31 +418,40 @@ export class ConnectionsService {
       },
     });
 
+    this.logger.log(`[2º grau] Conexões de 1º grau: ${firstDegreeContacts.length}`);
+
     if (firstDegreeContacts.length === 0) {
       return [];
     }
 
-    // Monta mapa de phone -> contato de 1º grau
+    // Monta mapa de phone -> contato de 1º grau (com variações)
     const phoneToFirstDegree = new Map<string, { id: string; name: string }>();
+    const allPhoneVariations: string[] = [];
+
     for (const conn of firstDegreeContacts) {
       if (conn.contact.phone) {
         const variations = PhoneUtil.getVariations(conn.contact.phone);
+        this.logger.log(`[2º grau] Contato ${conn.contact.name}: ${conn.contact.phone} → variações: ${variations.join(', ')}`);
         for (const v of variations) {
           phoneToFirstDegree.set(v, { id: conn.contact.id, name: conn.contact.name });
+          allPhoneVariations.push(v);
         }
       }
     }
 
-    // Busca usuários que são meus contatos de 1º grau (pelo telefone)
+    // Busca usuários que são meus contatos de 1º grau (pelo telefone com variações)
     const connectedUsers = await this.prisma.user.findMany({
       where: {
-        phone: { in: Array.from(phoneToFirstDegree.keys()) },
+        phone: { in: allPhoneVariations },
         id: { not: userId },
       },
       select: { id: true, name: true, phone: true },
     });
 
+    this.logger.log(`[2º grau] Usuários conectados encontrados: ${connectedUsers.length} - ${connectedUsers.map(u => `${u.name}(${u.phone})`).join(', ')}`);
+
     if (connectedUsers.length === 0) {
+      this.logger.log(`[2º grau] Nenhum usuário conectado encontrado com os telefones: ${allPhoneVariations.slice(0, 5).join(', ')}...`);
       return [];
     }
 
@@ -459,6 +470,7 @@ export class ConnectionsService {
       select: {
         id: true,
         position: true, // Só retorna cargo/área
+        company: true,
         ownerId: true,
         owner: {
           select: { id: true, name: true, phone: true },
@@ -466,6 +478,8 @@ export class ConnectionsService {
       },
       take: 20,
     });
+
+    this.logger.log(`[2º grau] Contatos de 2º grau encontrados: ${secondDegreeContacts.length}`);
 
     // Retorna apenas: área/profissão + quem pode conectar (sem dados pessoais)
     return secondDegreeContacts.map((c) => {
