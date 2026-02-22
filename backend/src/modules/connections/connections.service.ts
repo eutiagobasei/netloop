@@ -505,15 +505,17 @@ export class ConnectionsService {
       // Determina a área: cargo > empresa > fallback
       const area = c.position || c.company || 'Área não especificada';
 
-      const connectorPhone = connector?.phone || ownerPhone;
-      this.logger.log(`[2º grau] Retornando connector: name=${connector?.name}, phone=${connector?.phone}, ownerPhone=${ownerPhone}, final=${connectorPhone}`);
+      // Usa o telefone do USUÁRIO (ownerPhone) pois é o número cadastrado no WhatsApp
+      // O telefone do contato pode ter formato diferente (ex: com 9º dígito)
+      const connectorPhone = ownerPhone;
+      this.logger.log(`[2º grau] Retornando connector: name=${connector?.name}, ownerPhone=${ownerPhone}`);
 
       return {
         id: c.id,
         area, // Mostra cargo ou empresa
         connectorName: connector?.name || c.owner.name, // Quem pode conectar
         connectorId: connector?.id || null,
-        // Usa o telefone do contato de 1º grau (com 9º dígito) em vez do telefone do usuário
+        // Usa o telefone do usuário (WhatsApp real)
         connectorPhone,
         // NÃO expõe: nome, telefone, email do contato de 2º grau
       };
