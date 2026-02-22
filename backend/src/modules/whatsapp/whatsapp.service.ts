@@ -733,6 +733,7 @@ export class WhatsappService {
 
         if (querySubject) {
           const searchResult = await this.contactsService.search(message.userId, querySubject);
+          this.logger.log(`Resultado da busca: type=${searchResult.type}, data.length=${searchResult.data?.length || 0}`);
 
           // Se não encontrou em 1º grau, busca em 2º grau
           if (searchResult.type === 'nenhum') {
