@@ -329,22 +329,17 @@ export class ConnectionsService {
               if (!visitedIds.has(secondDegreeId) && !visitedIds.has(linkedConn.contactId)) {
                 visitedIds.add(secondDegreeId);
 
-                // PRIVACIDADE: Conexões de 2º grau NÃO mostram dados pessoais
-                // Apenas indica que existe uma conexão, sem revelar quem é
+                // PRIVACIDADE: Conexões de 2º grau NÃO mostram NENHUM dado
+                // Apenas exibe o círculo de ligação sem nome ou detalhes
                 // O usuário precisa pedir apresentação ao contato de 1º grau
                 nodes.push({
                   id: secondDegreeId,
-                  name: 'Conexão de 2º grau', // NÃO revela o nome
+                  name: '', // Sem nome
                   type: 'mentioned',
                   degree: 2,
-                  tags: linkedConn.contact.tags.map((ct) => ({
-                    id: ct.tag.id,
-                    name: ct.tag.name,
-                    color: ct.tag.color,
-                  })),
-                  // NÃO expõe: company, position, phone, email, context, location
+                  tags: [], // Sem tags
                   company: null,
-                  position: linkedConn.contact.position, // Mantém cargo/área para busca
+                  position: null,
                   phone: null,
                   email: null,
                   context: null,
@@ -367,19 +362,16 @@ export class ConnectionsService {
             if (!visitedIds.has(mentionedNodeId)) {
               visitedIds.add(mentionedNodeId);
 
-              // PRIVACIDADE: Mencionados também são 2º grau - não expõe dados
+              // PRIVACIDADE: Mencionados também são 2º grau - não expõe NENHUM dado
+              // Apenas exibe o círculo de ligação sem nome ou detalhes
               nodes.push({
                 id: mentionedNodeId,
-                name: 'Conexão de 2º grau',
+                name: '', // Sem nome
                 type: 'mentioned',
                 degree: 2,
-                tags: mentioned.tags.map((tagName) => ({
-                  id: tagName,
-                  name: tagName,
-                  color: '#9ca3af',
-                })),
-                description: null, // NÃO expõe descrição
-                phone: null, // NÃO expõe telefone
+                tags: [], // Sem tags
+                description: null,
+                phone: null,
               });
 
               edges.push({
