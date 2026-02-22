@@ -332,9 +332,12 @@ export class ConnectionsService {
               if (!visitedIds.has(secondDegreeId) && !visitedIds.has(linkedConn.contactId)) {
                 visitedIds.add(secondDegreeId);
 
+                // PRIVACIDADE: Conexões de 2º grau NÃO mostram dados pessoais
+                // Apenas indica que existe uma conexão, sem revelar quem é
+                // O usuário precisa pedir apresentação ao contato de 1º grau
                 nodes.push({
                   id: secondDegreeId,
-                  name: linkedConn.contact.name,
+                  name: 'Conexão de 2º grau', // NÃO revela o nome
                   type: 'mentioned',
                   degree: 2,
                   tags: linkedConn.contact.tags.map((ct) => ({
@@ -342,12 +345,13 @@ export class ConnectionsService {
                     name: ct.tag.name,
                     color: ct.tag.color,
                   })),
-                  company: linkedConn.contact.company,
-                  position: linkedConn.contact.position,
-                  phone: linkedConn.contact.phone,
-                  email: linkedConn.contact.email,
-                  context: linkedConn.contact.context,
-                  location: linkedConn.contact.location,
+                  // NÃO expõe: company, position, phone, email, context, location
+                  company: null,
+                  position: linkedConn.contact.position, // Mantém cargo/área para busca
+                  phone: null,
+                  email: null,
+                  context: null,
+                  location: null,
                 });
 
                 edges.push({
@@ -366,9 +370,10 @@ export class ConnectionsService {
             if (!visitedIds.has(mentionedNodeId)) {
               visitedIds.add(mentionedNodeId);
 
+              // PRIVACIDADE: Mencionados também são 2º grau - não expõe dados
               nodes.push({
                 id: mentionedNodeId,
-                name: mentioned.name,
+                name: 'Conexão de 2º grau',
                 type: 'mentioned',
                 degree: 2,
                 tags: mentioned.tags.map((tagName) => ({
@@ -376,8 +381,8 @@ export class ConnectionsService {
                   name: tagName,
                   color: '#9ca3af',
                 })),
-                description: mentioned.description,
-                phone: mentioned.phone,
+                description: null, // NÃO expõe descrição
+                phone: null, // NÃO expõe telefone
               });
 
               edges.push({
@@ -395,71 +400,92 @@ export class ConnectionsService {
   }
 
   async getSecondDegreeContacts(userId: string, search?: string) {
+    // PRIVACIDADE: Conexões de 2º grau servem apenas para descobrir
+    // quem do seu 1º grau pode te conectar com alguém de uma área/profissão
+    // NÃO expõe dados pessoais do contato de 2º grau
+
+    if (!search) {
+      // Sem busca, não retorna nada - precisa de um termo de busca
+      return [];
+    }
+
     // Busca contatos de 1º grau
     const firstDegreeContacts = await this.prisma.connection.findMany({
       where: { fromUserId: userId },
-      select: { contactId: true },
-    });
-
-    const firstDegreeIds = firstDegreeContacts.map((c) => c.contactId);
-
-    if (firstDegreeIds.length === 0) {
-      return [];
-    }
-
-    // Busca usuários que têm conexões com os mesmos contatos
-    const sharedConnections = await this.prisma.connection.findMany({
-      where: {
-        contactId: { in: firstDegreeIds },
-        fromUserId: { not: userId },
+      include: {
+        contact: {
+          select: { id: true, name: true, phone: true },
+        },
       },
-      select: { fromUserId: true, contactId: true },
     });
 
-    const connectedUserIds = [...new Set(sharedConnections.map((c) => c.fromUserId))];
-
-    if (connectedUserIds.length === 0) {
+    if (firstDegreeContacts.length === 0) {
       return [];
     }
 
-    // Busca contatos de 2º grau (contatos dos usuários conectados que não são do usuário)
-    const myContactIds = await this.prisma.contact.findMany({
-      where: { ownerId: userId },
-      select: { id: true },
+    // Monta mapa de phone -> contato de 1º grau
+    const phoneToFirstDegree = new Map<string, { id: string; name: string }>();
+    for (const conn of firstDegreeContacts) {
+      if (conn.contact.phone) {
+        const variations = PhoneUtil.getVariations(conn.contact.phone);
+        for (const v of variations) {
+          phoneToFirstDegree.set(v, { id: conn.contact.id, name: conn.contact.name });
+        }
+      }
+    }
+
+    // Busca usuários que são meus contatos de 1º grau (pelo telefone)
+    const connectedUsers = await this.prisma.user.findMany({
+      where: {
+        phone: { in: Array.from(phoneToFirstDegree.keys()) },
+        id: { not: userId },
+      },
+      select: { id: true, name: true, phone: true },
     });
 
-    const myIds = myContactIds.map((c) => c.id);
+    if (connectedUsers.length === 0) {
+      return [];
+    }
 
-    const searchCondition = search
-      ? {
-          OR: [
-            { name: { contains: search, mode: 'insensitive' as const } },
-            { company: { contains: search, mode: 'insensitive' as const } },
-            { notes: { contains: search, mode: 'insensitive' as const } },
-          ],
-        }
-      : {};
+    const connectedUserIds = connectedUsers.map((u) => u.id);
 
-    return this.prisma.contact.findMany({
+    // Busca contatos de 2º grau que matcham a busca (por área/profissão)
+    const secondDegreeContacts = await this.prisma.contact.findMany({
       where: {
         ownerId: { in: connectedUserIds },
-        id: { notIn: [...firstDegreeIds, ...myIds] },
-        ...searchCondition,
+        OR: [
+          { position: { contains: search, mode: 'insensitive' as const } },
+          { company: { contains: search, mode: 'insensitive' as const } },
+          { notes: { contains: search, mode: 'insensitive' as const } },
+        ],
       },
-      include: {
-        tags: {
-          include: {
-            tag: true,
-          },
-        },
+      select: {
+        id: true,
+        position: true, // Só retorna cargo/área
+        ownerId: true,
         owner: {
-          select: {
-            id: true,
-            name: true,
-          },
+          select: { id: true, name: true, phone: true },
         },
       },
-      take: 50,
+      take: 20,
+    });
+
+    // Retorna apenas: área/profissão + quem pode conectar (sem dados pessoais)
+    return secondDegreeContacts.map((c) => {
+      // Encontra qual contato de 1º grau pode fazer a conexão
+      const connectorPhone = c.owner.phone;
+      const connector = connectorPhone
+        ? phoneToFirstDegree.get(connectorPhone) ||
+          phoneToFirstDegree.get(PhoneUtil.normalize(connectorPhone) || '')
+        : null;
+
+      return {
+        id: c.id,
+        area: c.position || 'Área não especificada', // Só mostra a área/profissão
+        connectorName: connector?.name || c.owner.name, // Quem pode conectar
+        connectorId: connector?.id || null,
+        // NÃO expõe: nome, telefone, email, empresa do contato de 2º grau
+      };
     });
   }
 }
