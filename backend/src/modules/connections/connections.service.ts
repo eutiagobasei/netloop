@@ -501,12 +501,15 @@ export class ConnectionsService {
           phoneToFirstDegree.get(PhoneUtil.normalize(connectorPhone) || '')
         : null;
 
+      // Determina a área: cargo > empresa > fallback
+      const area = c.position || c.company || 'Área não especificada';
+
       return {
         id: c.id,
-        area: c.position || 'Área não especificada', // Só mostra a área/profissão
+        area, // Mostra cargo ou empresa
         connectorName: connector?.name || c.owner.name, // Quem pode conectar
         connectorId: connector?.id || null,
-        // NÃO expõe: nome, telefone, email, empresa do contato de 2º grau
+        // NÃO expõe: nome, telefone, email do contato de 2º grau
       };
     });
   }
