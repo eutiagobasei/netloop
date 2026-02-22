@@ -425,7 +425,8 @@ export class ConnectionsService {
     }
 
     // Monta mapa de phone -> contato de 1º grau (com variações)
-    const phoneToFirstDegree = new Map<string, { id: string; name: string }>();
+    // Guarda também o telefone original do contato (que pode ter 9º dígito)
+    const phoneToFirstDegree = new Map<string, { id: string; name: string; phone: string }>();
     const allPhoneVariations: string[] = [];
 
     for (const conn of firstDegreeContacts) {
@@ -433,7 +434,7 @@ export class ConnectionsService {
         const variations = PhoneUtil.getVariations(conn.contact.phone);
         this.logger.log(`[2º grau] Contato ${conn.contact.name}: ${conn.contact.phone} → variações: ${variations.join(', ')}`);
         for (const v of variations) {
-          phoneToFirstDegree.set(v, { id: conn.contact.id, name: conn.contact.name });
+          phoneToFirstDegree.set(v, { id: conn.contact.id, name: conn.contact.name, phone: conn.contact.phone });
           allPhoneVariations.push(v);
         }
       }
@@ -509,7 +510,8 @@ export class ConnectionsService {
         area, // Mostra cargo ou empresa
         connectorName: connector?.name || c.owner.name, // Quem pode conectar
         connectorId: connector?.id || null,
-        connectorPhone: ownerPhone, // Telefone do conector para enviar mensagem
+        // Usa o telefone do contato de 1º grau (com 9º dígito) em vez do telefone do usuário
+        connectorPhone: connector?.phone || ownerPhone,
         // NÃO expõe: nome, telefone, email do contato de 2º grau
       };
     });
