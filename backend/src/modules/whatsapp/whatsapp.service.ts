@@ -20,6 +20,9 @@ const UPDATE_STATE_TIMEOUT_MS = 5 * 60 * 1000;
 // Timeout para expirar pedido de contexto (3 minutos)
 const CONTEXT_REQUEST_TIMEOUT_MS = 3 * 60 * 1000;
 
+// Timeout para expirar pedido de apresentação (5 minutos)
+const INTRO_REQUEST_TIMEOUT_MS = 5 * 60 * 1000;
+
 @Injectable()
 export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
@@ -29,6 +32,14 @@ export class WhatsappService {
 
   // Estado de pedido de contexto pendente: Map<phone, { contactId, contactName, timestamp }>
   private pendingContextRequests = new Map<string, { contactId: string; contactName: string; timestamp: number }>();
+
+  // Estado de pedido de apresentação de 2º grau pendente
+  private pendingIntroRequests = new Map<string, {
+    connectorName: string;
+    area: string;
+    query: string;
+    timestamp: number;
+  }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -723,6 +734,40 @@ export class WhatsappService {
         return;
       }
 
+      // 0. VERIFICAR SE HÁ PEDIDO DE APRESENTAÇÃO PENDENTE
+      const pendingIntro = this.pendingIntroRequests.get(fromPhone);
+      if (pendingIntro) {
+        const isExpired = Date.now() - pendingIntro.timestamp > INTRO_REQUEST_TIMEOUT_MS;
+        const isConfirmation = this.isIntroConfirmation(transcription);
+
+        if (isExpired) {
+          this.pendingIntroRequests.delete(fromPhone);
+          this.logger.log(`[Intro] Estado expirado para ${fromPhone}`);
+        } else if (isConfirmation) {
+          // Usuário confirmou que quer apresentação
+          this.pendingIntroRequests.delete(fromPhone);
+
+          const confirmMessage = `✅ Vou pedir para *${pendingIntro.connectorName}* te apresentar a alguém de *${pendingIntro.area}*!\n\n📩 Assim que tiver novidades, te aviso por aqui.`;
+          await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
+
+          // TODO: Implementar notificação ao conector (futuro)
+          this.logger.log(`[Intro] Apresentação confirmada para ${fromPhone}: ${pendingIntro.connectorName} → ${pendingIntro.area}`);
+
+          // Atualiza a mensagem como processada
+          await this.prisma.whatsappMessage.update({
+            where: { id: messageId },
+            data: {
+              transcription,
+              processed: true,
+              processedAt: new Date(),
+              approvalStatus: 'APPROVED',
+            },
+          });
+          return;
+        }
+        // Se não é confirmação, continua o fluxo normal
+      }
+
       // 1. CLASSIFICAR INTENÇÃO DA MENSAGEM
       const intent = await this.aiService.classifyIntent(transcription);
       this.logger.log(`Intenção detectada para ${messageId}: ${intent}`);
@@ -746,6 +791,15 @@ export class WhatsappService {
               // Encontrou conexões de 2º grau - formata mensagem de "ponte"
               const bridgeMessage = this.formatBridgeMessage(secondDegreeResults, querySubject);
               await this.evolutionService.sendTextMessage(fromPhone, bridgeMessage);
+
+              // Salva estado para aguardar confirmação de apresentação
+              this.pendingIntroRequests.set(fromPhone, {
+                connectorName: secondDegreeResults[0].connectorName,
+                area: secondDegreeResults[0].area,
+                query: querySubject,
+                timestamp: Date.now(),
+              });
+              this.logger.log(`[Intro] Estado salvo para ${fromPhone}: aguardando confirmação`);
 
               // Atualiza a mensagem como processada
               await this.prisma.whatsappMessage.update({
@@ -1007,6 +1061,33 @@ export class WhatsappService {
     message += `\n💬 Quer que eu peça uma apresentação?`;
 
     return message;
+  }
+
+  /**
+   * Verifica se a mensagem é uma confirmação de pedido de apresentação
+   */
+  private isIntroConfirmation(text: string): boolean {
+    const normalized = text.toLowerCase().trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+      .replace(/[!?.,:;]+/g, '');      // Remove pontuação
+
+    const confirmations = [
+      'sim', 'quero', 'pode', 'por favor', 'claro', 'com certeza',
+      'pode ser', 'bora', 'vamos', 'fechou', 'manda', 'pede',
+      'pede sim', 'quero sim', 'sim quero', 'pode pedir',
+      'yes', 'ok', 'beleza', 'blz', 'show', 'top', 'massa',
+      's', 'ss', 'sss', 'siiim', 'simm', 'queroo',
+    ];
+
+    // Verifica match exato ou se começa com confirmação
+    if (confirmations.includes(normalized)) {
+      return true;
+    }
+
+    // Verifica se começa com palavras de confirmação
+    const startsWithConfirm = confirmations.some(c => normalized.startsWith(c + ' ') || normalized === c);
+    return startsWithConfirm;
   }
 
   /**
