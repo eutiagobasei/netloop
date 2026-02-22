@@ -389,13 +389,13 @@ export class WhatsappService {
   }
 
   private async handleApprovalResponse(message: any, response: string) {
-    this.logger.log(`Resposta de aprovação recebida: "${response}" para mensagem ${message.id}`);
+    this.logger.log(`Resposta recebida: "${response}" para mensagem ${message.id}`);
 
     // Respostas de rejeição
-    const rejectResponses = ['não', 'nao', 'n', 'cancelar', 'cancel', 'rejeitar', 'descartar'];
+    const rejectResponses = ['não', 'nao', 'n', 'cancelar', 'cancel', 'rejeitar', 'descartar', 'apagar', 'deletar'];
 
-    // Respostas de aprovação
-    const approveResponses = ['sim', 's', 'ok', 'yes', 'y', 'salvar', 'aprovar', 'confirmar', '1'];
+    // Respostas de skip (pular sem contexto)
+    const skipResponses = ['pular', 'skip', 'ok', 'salvar', 'sim', 's', 'y', 'yes'];
 
     if (rejectResponses.includes(response)) {
       await this.prisma.whatsappMessage.update({
@@ -408,7 +408,7 @@ export class WhatsappService {
 
       await this.evolutionService.sendTextMessage(
         message.fromPhone,
-        '❌ Contato descartado. Envie uma nova mensagem quando quiser adicionar outro contato.'
+        'Descartado 👍'
       );
 
       return { status: 'rejected' };
@@ -425,25 +425,41 @@ export class WhatsappService {
           data: { extractedData: updatedData },
         });
 
-        // Refaz com os dados atualizados e tenta criar
-        const updatedMessage = { ...message, extractedData: updatedData };
-        return this.approveAndCreateContact(updatedMessage, 'APPROVED');
+        // Pergunta o contexto agora que temos o telefone
+        await this.evolutionService.sendTextMessage(
+          message.fromPhone,
+          `De onde vocês se conhecem?`
+        );
+
+        return { status: 'phone_added' };
       }
     }
 
-    // Qualquer outra resposta (inclusive silêncio tratado pelo timeout) é aprovação
-    if (approveResponses.includes(response) || response === 'auto') {
-      return this.approveAndCreateContact(message, response === 'auto' ? 'AUTO_APPROVED' : 'APPROVED');
+    // Auto-aprovação pelo timeout
+    if (response === 'auto') {
+      return this.approveAndCreateContact(message, 'AUTO_APPROVED');
     }
 
-    // Se for uma correção (contém algum dado novo), atualiza os dados extraídos
-    if (response.length > 10) {
-      // Tenta interpretar a resposta como correção usando IA
-      return this.handleCorrectionResponse(message, response);
+    // Se pulou sem dar contexto
+    if (skipResponses.includes(response)) {
+      return this.approveAndCreateContact(message, 'APPROVED');
     }
 
-    // Resposta não reconhecida - trata como aprovação
-    return this.approveAndCreateContact(message, 'APPROVED');
+    // Qualquer outra resposta é tratada como CONTEXTO (onde se conheceram)
+    // Adiciona o contexto aos dados extraídos e salva
+    const updatedData = {
+      ...message.extractedData,
+      context: response,
+      tags: [...(message.extractedData?.tags || []), response.split(' ')[0]] // Primeira palavra como tag
+    };
+
+    await this.prisma.whatsappMessage.update({
+      where: { id: message.id },
+      data: { extractedData: updatedData },
+    });
+
+    const updatedMessage = { ...message, extractedData: updatedData };
+    return this.approveAndCreateContact(updatedMessage, 'APPROVED');
   }
 
   private async handleCorrectionResponse(message: any, correction: string) {
@@ -513,15 +529,16 @@ export class WhatsappService {
         },
       });
 
-      // Envia confirmação
-      const confirmMessage = status === 'AUTO_APPROVED'
-        ? `✅ Contato *${extractedData.name}* salvo automaticamente na sua rede!`
-        : `✅ Contato *${extractedData.name}* salvo na sua rede!`;
+      // Envia confirmação simples e natural
+      let confirmMessage = `Salvei *${extractedData.name}*`;
+      if (extractedData.context) {
+        confirmMessage += ` - ${extractedData.context}`;
+      }
+      confirmMessage += ` 👍`;
 
       await this.evolutionService.sendTextMessage(message.fromPhone, confirmMessage);
 
-      // Pergunta sobre contexto adicional após 1.5s
-      this.askForContextInfo(message.fromPhone, contact.id, extractedData.name);
+      // NÃO pergunta mais sobre contexto - já foi perguntado antes de salvar
 
       return { status: 'approved', contactName: extractedData.name };
     } catch (error) {
@@ -1137,25 +1154,23 @@ export class WhatsappService {
   }
 
   private formatContactSummary(data: any, tags: string[]): string {
-    let summary = `📋 *Novo Contato Identificado*\n\n`;
-    summary += `👤 *Nome:* ${data.name}\n`;
+    // Formato mais natural e conversacional
+    let summary = `Achei *${data.name}*`;
 
-    if (data.phone) summary += `📱 *Telefone:* ${data.phone}\n`;
-    if (data.email) summary += `📧 *Email:* ${data.email}\n`;
-    if (data.company) summary += `🏢 *Empresa:* ${data.company}\n`;
-    if (data.position) summary += `💼 *Cargo:* ${data.position}\n`;
-    if (data.location) summary += `📍 *Local:* ${data.location}\n`;
-    if (data.context) summary += `\n💬 *Contexto:* ${data.context}\n`;
+    // Adiciona informações relevantes de forma natural
+    const details: string[] = [];
+    if (data.company) details.push(data.company);
+    if (data.position) details.push(data.position);
 
-    if (tags.length > 0) {
-      summary += `\n🏷️ *Tags:* ${tags.join(', ')}\n`;
+    if (details.length > 0) {
+      summary += ` - ${details.join(', ')}`;
     }
 
-    summary += `\n─────────────────\n`;
-    summary += `✅ Responda *OK* para salvar\n`;
-    summary += `❌ Responda *NÃO* para descartar\n`;
-    summary += `✏️ Ou envie correções\n\n`;
-    summary += `⏰ _Será salvo automaticamente em 2 min_`;
+    summary += `\n`;
+    if (data.phone) summary += `📱 ${data.phone}\n`;
+    if (data.email) summary += `✉️ ${data.email}\n`;
+
+    summary += `\nDe onde vocês se conhecem?`;
 
     return summary;
   }
@@ -1235,12 +1250,10 @@ export class WhatsappService {
       await this.createAndAssignTags(userId, contact.id, extractedData.tags);
     }
 
-    // Notificação de contato em comum
-    if (contact.phone) {
-      this.notifySharedContact(userId, contact.name, contact.phone).catch((err) => {
-        this.logger.error(`Erro ao notificar contato em comum: ${err.message}`);
-      });
-    }
+    // REMOVIDO: Notificação automática de contato em comum
+    // Essa informação de 2º grau só deve aparecer quando o usuário
+    // solicitar conexão com alguém de uma área específica
+    // Ex: "preciso de alguém de móveis planejados" -> "Thiago pode te conectar com Matheus"
 
     return contact;
   }
