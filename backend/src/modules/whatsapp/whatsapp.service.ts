@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MessageType, Prisma, ApprovalStatus } from '@prisma/client';
 import { ContactsService } from '../contacts/contacts.service';
+import { ConnectionsService } from '../connections/connections.service';
 import { AIService } from '../ai/ai.service';
 import { EvolutionService } from './evolution.service';
 import { RegistrationService } from '../registration/registration.service';
@@ -33,6 +34,7 @@ export class WhatsappService {
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
     private readonly contactsService: ContactsService,
+    private readonly connectionsService: ConnectionsService,
     @Inject(forwardRef(() => AIService))
     private readonly aiService: AIService,
     private readonly evolutionService: EvolutionService,
@@ -731,6 +733,36 @@ export class WhatsappService {
 
         if (querySubject) {
           const searchResult = await this.contactsService.search(message.userId, querySubject);
+
+          // Se não encontrou em 1º grau, busca em 2º grau
+          if (searchResult.type === 'nenhum') {
+            const secondDegreeResults = await this.connectionsService.getSecondDegreeContacts(
+              message.userId,
+              querySubject
+            );
+
+            if (secondDegreeResults.length > 0) {
+              // Encontrou conexões de 2º grau - formata mensagem de "ponte"
+              const bridgeMessage = this.formatBridgeMessage(secondDegreeResults, querySubject);
+              await this.evolutionService.sendTextMessage(fromPhone, bridgeMessage);
+
+              // Atualiza a mensagem como processada
+              await this.prisma.whatsappMessage.update({
+                where: { id: messageId },
+                data: {
+                  transcription,
+                  processed: true,
+                  processedAt: new Date(),
+                  approvalStatus: 'APPROVED',
+                },
+              });
+
+              this.logger.log(`Query de 2º grau processada para ${messageId}: ${querySubject} - ${secondDegreeResults.length} resultados`);
+              return;
+            }
+          }
+
+          // Retorna resultado normal (1º grau ou nenhum)
           await this.sendSearchResponse(fromPhone, searchResult);
         } else {
           // Não conseguiu extrair o assunto, responde pedindo mais detalhes
@@ -935,6 +967,45 @@ export class WhatsappService {
     }
 
     await this.evolutionService.sendTextMessage(toPhone, responseText);
+  }
+
+  /**
+   * Formata mensagem de "ponte" para conexões de 2º grau
+   * Indica quem do 1º grau pode conectar o usuário com alguém da área buscada
+   */
+  private formatBridgeMessage(
+    connections: { id: string; area: string; connectorName: string; connectorId: string | null }[],
+    query: string
+  ): string {
+    // Agrupa por conector (quem pode fazer a ponte)
+    const byConnector = new Map<string, string[]>();
+
+    for (const conn of connections) {
+      const areas = byConnector.get(conn.connectorName) || [];
+      if (!areas.includes(conn.area)) {
+        areas.push(conn.area);
+      }
+      byConnector.set(conn.connectorName, areas);
+    }
+
+    if (byConnector.size === 1) {
+      const [connectorName, areas] = Array.from(byConnector.entries())[0];
+      const areaText = areas.length > 1 ? areas.join(', ') : areas[0];
+
+      return `🔗 *${connectorName}* pode te conectar com alguém de *${query}*!\n\n💼 Área: ${areaText}\n\n💬 Quer que eu peça uma apresentação?`;
+    }
+
+    // Múltiplos conectores
+    let message = `🔗 Encontrei conexões de 2º grau para *${query}*:\n\n`;
+
+    for (const [name, areas] of byConnector) {
+      const areaText = areas.length > 1 ? areas.slice(0, 2).join(', ') : areas[0];
+      message += `• *${name}* conhece alguém de ${areaText}\n`;
+    }
+
+    message += `\n💬 Quer que eu peça uma apresentação?`;
+
+    return message;
   }
 
   /**
