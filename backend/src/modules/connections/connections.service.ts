@@ -495,10 +495,10 @@ export class ConnectionsService {
     // Retorna apenas: área/profissão + quem pode conectar (sem dados pessoais)
     return secondDegreeContacts.map((c) => {
       // Encontra qual contato de 1º grau pode fazer a conexão
-      const connectorPhone = c.owner.phone;
-      const connector = connectorPhone
-        ? phoneToFirstDegree.get(connectorPhone) ||
-          phoneToFirstDegree.get(PhoneUtil.normalize(connectorPhone) || '')
+      const ownerPhone = c.owner.phone;
+      const connector = ownerPhone
+        ? phoneToFirstDegree.get(ownerPhone) ||
+          phoneToFirstDegree.get(PhoneUtil.normalize(ownerPhone) || '')
         : null;
 
       // Determina a área: cargo > empresa > fallback
@@ -509,6 +509,7 @@ export class ConnectionsService {
         area, // Mostra cargo ou empresa
         connectorName: connector?.name || c.owner.name, // Quem pode conectar
         connectorId: connector?.id || null,
+        connectorPhone: ownerPhone, // Telefone do conector para enviar mensagem
         // NÃO expõe: nome, telefone, email do contato de 2º grau
       };
     });

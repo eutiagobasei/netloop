@@ -36,8 +36,10 @@ export class WhatsappService {
   // Estado de pedido de apresentação de 2º grau pendente
   private pendingIntroRequests = new Map<string, {
     connectorName: string;
+    connectorPhone: string | null;
     area: string;
     query: string;
+    requesterName: string;
     timestamp: number;
   }>();
 
@@ -704,6 +706,7 @@ export class WhatsappService {
 
     const message = await this.prisma.whatsappMessage.findUnique({
       where: { id: messageId },
+      include: { user: { select: { id: true, name: true } } },
     });
 
     if (!message) {
@@ -755,10 +758,25 @@ export class WhatsappService {
             // Usuário confirmou que quer apresentação
             this.pendingIntroRequests.delete(fromPhone);
 
-            const confirmMessage = `✅ Vou pedir para *${pendingIntro.connectorName}* te apresentar a alguém de *${pendingIntro.area}*!\n\n📩 Assim que tiver novidades, te aviso por aqui.`;
-            await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
+            // Envia o contato do conector para o usuário entrar em contato diretamente
+            if (pendingIntro.connectorPhone) {
+              const confirmMessage = `📱 Aqui está o contato de *${pendingIntro.connectorName}* para você pedir a apresentação:\n\n` +
+                `Telefone: ${this.formatPhoneForDisplay(pendingIntro.connectorPhone)}\n\n` +
+                `💡 Dica: Mencione que está procurando alguém de *${pendingIntro.area}*!`;
+              await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
 
-            this.logger.log(`[Intro] Apresentação confirmada para ${fromPhone}: ${pendingIntro.connectorName} → ${pendingIntro.area}`);
+              // Envia também como vCard para facilitar salvar
+              await this.evolutionService.sendContact(fromPhone, {
+                fullName: pendingIntro.connectorName,
+                phoneNumber: pendingIntro.connectorPhone,
+              });
+            } else {
+              const confirmMessage = `📱 *${pendingIntro.connectorName}* pode te conectar com alguém de *${pendingIntro.area}*!\n\n` +
+                `Infelizmente não tenho o telefone dele cadastrado. Você conhece ele?`;
+              await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
+            }
+
+            this.logger.log(`[Intro] Contato do conector enviado para ${fromPhone}: ${pendingIntro.connectorName}`);
 
             await this.prisma.whatsappMessage.update({
               where: { id: messageId },
@@ -812,18 +830,19 @@ export class WhatsappService {
             );
 
             if (secondDegreeResults.length > 0) {
-              // Encontrou conexões de 2º grau - formata mensagem de "ponte"
-              const bridgeMessage = this.formatBridgeMessage(secondDegreeResults, querySubject);
+              // Encontrou conexões de 2º grau - envia mensagem e contato do conector
+              const connector = secondDegreeResults[0];
+              const bridgeMessage = this.formatBridgeMessageWithContact(connector, querySubject);
               await this.evolutionService.sendTextMessage(fromPhone, bridgeMessage);
 
-              // Salva estado para aguardar confirmação de apresentação
-              this.pendingIntroRequests.set(fromPhone, {
-                connectorName: secondDegreeResults[0].connectorName,
-                area: secondDegreeResults[0].area,
-                query: querySubject,
-                timestamp: Date.now(),
-              });
-              this.logger.log(`[Intro] Estado salvo para ${fromPhone}: aguardando confirmação`);
+              // Envia o contato do conector como vCard
+              if (connector.connectorPhone) {
+                await this.evolutionService.sendContact(fromPhone, {
+                  fullName: connector.connectorName,
+                  phoneNumber: connector.connectorPhone,
+                });
+                this.logger.log(`[2º grau] Contato de ${connector.connectorName} enviado para ${fromPhone}`);
+              }
 
               // Atualiza a mensagem como processada
               await this.prisma.whatsappMessage.update({
@@ -1049,6 +1068,30 @@ export class WhatsappService {
   }
 
   /**
+   * Formata telefone para exibição
+   */
+  private formatPhoneForDisplay(phone: string): string {
+    // Remove tudo que não é número
+    const cleaned = phone.replace(/\D/g, '');
+
+    // Formato brasileiro: +55 (XX) XXXXX-XXXX
+    if (cleaned.length === 13 && cleaned.startsWith('55')) {
+      return `+55 (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 9)}-${cleaned.slice(9)}`;
+    }
+    if (cleaned.length === 12 && cleaned.startsWith('55')) {
+      return `+55 (${cleaned.slice(2, 4)}) ${cleaned.slice(4, 8)}-${cleaned.slice(8)}`;
+    }
+    if (cleaned.length === 11) {
+      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 7)}-${cleaned.slice(7)}`;
+    }
+    if (cleaned.length === 10) {
+      return `(${cleaned.slice(0, 2)}) ${cleaned.slice(2, 6)}-${cleaned.slice(6)}`;
+    }
+
+    return phone;
+  }
+
+  /**
    * Formata mensagem de "ponte" para conexões de 2º grau
    * Indica quem do 1º grau pode conectar o usuário com alguém da área buscada
    */
@@ -1083,6 +1126,25 @@ export class WhatsappService {
     }
 
     message += `\n💬 Quer que eu peça uma apresentação?`;
+
+    return message;
+  }
+
+  /**
+   * Formata mensagem de conexão de 2º grau já incluindo o contato
+   */
+  private formatBridgeMessageWithContact(
+    connector: { connectorName: string; connectorPhone: string | null; area: string },
+    query: string
+  ): string {
+    let message = `🔗 *${connector.connectorName}* pode te conectar com alguém de *${query}*!\n\n`;
+    message += `💼 Área: ${connector.area}\n\n`;
+
+    if (connector.connectorPhone) {
+      message += `📱 Segue o contato para você entrar em contato diretamente:`;
+    } else {
+      message += `💡 Entre em contato com ${connector.connectorName} para pedir a apresentação!`;
+    }
 
     return message;
   }

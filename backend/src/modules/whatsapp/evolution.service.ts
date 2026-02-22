@@ -264,4 +264,54 @@ export class EvolutionService {
       return false;
     }
   }
+
+  /**
+   * Envia contato (vCard)
+   */
+  async sendContact(
+    toPhone: string,
+    contact: { fullName: string; phoneNumber: string; organization?: string },
+  ): Promise<boolean> {
+    try {
+      const { apiUrl, apiKey, instanceName } = await this.getCredentials();
+      if (!apiUrl || !apiKey || !instanceName) {
+        this.logger.warn('Evolution API não configurada completamente');
+        return false;
+      }
+
+      const formattedNumber = this.formatPhoneNumber(toPhone);
+      const contactPhone = this.formatPhoneNumber(contact.phoneNumber);
+
+      const response = await fetch(`${apiUrl}/message/sendContact/${instanceName}`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: apiKey,
+        },
+        body: JSON.stringify({
+          number: formattedNumber,
+          contact: [
+            {
+              fullName: contact.fullName,
+              wuid: `${contactPhone}@s.whatsapp.net`,
+              phoneNumber: contactPhone,
+              organization: contact.organization || '',
+            },
+          ],
+        }),
+      });
+
+      if (response.ok) {
+        this.logger.log(`Contato ${contact.fullName} enviado para ${formattedNumber}`);
+        return true;
+      }
+
+      const error = await response.text();
+      this.logger.error(`Erro ao enviar contato: ${response.status} - ${error}`);
+      return false;
+    } catch (error) {
+      this.logger.error('Erro ao enviar contato:', error);
+      return false;
+    }
+  }
 }
