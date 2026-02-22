@@ -458,10 +458,21 @@ export class ConnectionsService {
     const connectedUserIds = connectedUsers.map((u) => u.id);
 
     // Busca contatos de 2º grau que matcham a busca (por área/profissão)
+    // Divide a busca em palavras para encontrar matches parciais
+    const searchWords = search.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    this.logger.log(`[2º grau] Palavras de busca: ${searchWords.join(', ')}`);
+
+    // Cria condições OR para cada palavra em cada campo
+    const searchConditions = searchWords.flatMap(word => [
+      { position: { contains: word, mode: 'insensitive' as const } },
+      { company: { contains: word, mode: 'insensitive' as const } },
+      { notes: { contains: word, mode: 'insensitive' as const } },
+    ]);
+
     const secondDegreeContacts = await this.prisma.contact.findMany({
       where: {
         ownerId: { in: connectedUserIds },
-        OR: [
+        OR: searchConditions.length > 0 ? searchConditions : [
           { position: { contains: search, mode: 'insensitive' as const } },
           { company: { contains: search, mode: 'insensitive' as const } },
           { notes: { contains: search, mode: 'insensitive' as const } },
