@@ -113,4 +113,16 @@ export class AIService {
   async generateGreetingResponse(userName?: string): Promise<string> {
     return this.extractionService.generateGreetingResponse(userName);
   }
+
+  /**
+   * Classifica resposta do usuário no contexto de pedido de apresentação
+   * @returns 'confirm' | 'reject' | 'other'
+   */
+  async classifyIntroResponse(
+    userMessage: string,
+    connectorName: string,
+    area: string
+  ): Promise<'confirm' | 'reject' | 'other'> {
+    return this.extractionService.classifyIntroResponse(userMessage, connectorName, area);
+  }
 }

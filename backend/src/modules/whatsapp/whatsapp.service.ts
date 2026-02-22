@@ -738,34 +738,58 @@ export class WhatsappService {
       const pendingIntro = this.pendingIntroRequests.get(fromPhone);
       if (pendingIntro) {
         const isExpired = Date.now() - pendingIntro.timestamp > INTRO_REQUEST_TIMEOUT_MS;
-        const isConfirmation = this.isIntroConfirmation(transcription);
 
         if (isExpired) {
           this.pendingIntroRequests.delete(fromPhone);
           this.logger.log(`[Intro] Estado expirado para ${fromPhone}`);
-        } else if (isConfirmation) {
-          // Usuário confirmou que quer apresentação
+        } else {
+          // Usa IA para classificar a resposta no contexto de apresentação
+          const introResponse = await this.aiService.classifyIntroResponse(
+            transcription,
+            pendingIntro.connectorName,
+            pendingIntro.area
+          );
+          this.logger.log(`[Intro] Classificação IA: ${introResponse}`);
+
+          if (introResponse === 'confirm') {
+            // Usuário confirmou que quer apresentação
+            this.pendingIntroRequests.delete(fromPhone);
+
+            const confirmMessage = `✅ Vou pedir para *${pendingIntro.connectorName}* te apresentar a alguém de *${pendingIntro.area}*!\n\n📩 Assim que tiver novidades, te aviso por aqui.`;
+            await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
+
+            this.logger.log(`[Intro] Apresentação confirmada para ${fromPhone}: ${pendingIntro.connectorName} → ${pendingIntro.area}`);
+
+            await this.prisma.whatsappMessage.update({
+              where: { id: messageId },
+              data: {
+                transcription,
+                processed: true,
+                processedAt: new Date(),
+                approvalStatus: 'APPROVED',
+              },
+            });
+            return;
+          } else if (introResponse === 'reject') {
+            // Usuário recusou
+            this.pendingIntroRequests.delete(fromPhone);
+
+            await this.evolutionService.sendTextMessage(fromPhone, 'Sem problemas! Se precisar de outra coisa, é só me chamar. 👋');
+
+            await this.prisma.whatsappMessage.update({
+              where: { id: messageId },
+              data: {
+                transcription,
+                processed: true,
+                processedAt: new Date(),
+                approvalStatus: 'APPROVED',
+              },
+            });
+            return;
+          }
+          // Se 'other', continua o fluxo normal (usuário mudou de assunto)
           this.pendingIntroRequests.delete(fromPhone);
-
-          const confirmMessage = `✅ Vou pedir para *${pendingIntro.connectorName}* te apresentar a alguém de *${pendingIntro.area}*!\n\n📩 Assim que tiver novidades, te aviso por aqui.`;
-          await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
-
-          // TODO: Implementar notificação ao conector (futuro)
-          this.logger.log(`[Intro] Apresentação confirmada para ${fromPhone}: ${pendingIntro.connectorName} → ${pendingIntro.area}`);
-
-          // Atualiza a mensagem como processada
-          await this.prisma.whatsappMessage.update({
-            where: { id: messageId },
-            data: {
-              transcription,
-              processed: true,
-              processedAt: new Date(),
-              approvalStatus: 'APPROVED',
-            },
-          });
-          return;
         }
-        // Se não é confirmação, continua o fluxo normal
       }
 
       // 1. CLASSIFICAR INTENÇÃO DA MENSAGEM
@@ -1061,33 +1085,6 @@ export class WhatsappService {
     message += `\n💬 Quer que eu peça uma apresentação?`;
 
     return message;
-  }
-
-  /**
-   * Verifica se a mensagem é uma confirmação de pedido de apresentação
-   */
-  private isIntroConfirmation(text: string): boolean {
-    const normalized = text.toLowerCase().trim()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
-      .replace(/[!?.,:;]+/g, '');      // Remove pontuação
-
-    const confirmations = [
-      'sim', 'quero', 'pode', 'por favor', 'claro', 'com certeza',
-      'pode ser', 'bora', 'vamos', 'fechou', 'manda', 'pede',
-      'pede sim', 'quero sim', 'sim quero', 'pode pedir',
-      'yes', 'ok', 'beleza', 'blz', 'show', 'top', 'massa',
-      's', 'ss', 'sss', 'siiim', 'simm', 'queroo',
-    ];
-
-    // Verifica match exato ou se começa com confirmação
-    if (confirmations.includes(normalized)) {
-      return true;
-    }
-
-    // Verifica se começa com palavras de confirmação
-    const startsWithConfirm = confirmations.some(c => normalized.startsWith(c + ' ') || normalized === c);
-    return startsWithConfirm;
   }
 
   /**

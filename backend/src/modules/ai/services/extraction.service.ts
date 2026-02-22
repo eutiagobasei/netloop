@@ -592,4 +592,70 @@ export class ExtractionService {
       return `✅ ${field} de ${name} atualizado!`;
     }
   }
+
+  /**
+   * Classifica a resposta do usuário no contexto de um pedido de apresentação
+   * Contexto: Sistema perguntou "Quer que eu peça uma apresentação?" para conectar
+   * com alguém de uma área específica via um contato de 1º grau
+   */
+  async classifyIntroResponse(
+    userMessage: string,
+    connectorName: string,
+    area: string
+  ): Promise<'confirm' | 'reject' | 'other'> {
+    this.logger.log(`Classificando resposta de intro: "${userMessage}" (conector: ${connectorName}, área: ${area})`);
+
+    const client = await this.openaiService.getClient();
+
+    const systemPrompt = `Você está analisando a resposta de um usuário em um contexto específico.
+
+CONTEXTO:
+O sistema acabou de informar que "${connectorName}" pode conectar o usuário com alguém de "${area}".
+O sistema perguntou: "Quer que eu peça uma apresentação?"
+
+TAREFA:
+Classifique a resposta do usuário em UMA das categorias:
+
+- "confirm": O usuário QUER a apresentação (sim, quero, pode, por favor, bora, manda, fechou, etc.)
+- "reject": O usuário NÃO quer a apresentação (não, deixa, não precisa, talvez depois, etc.)
+- "other": O usuário mudou de assunto ou a mensagem não é relacionada à pergunta
+
+EXEMPLOS:
+- "sim" → confirm
+- "quero" → confirm
+- "pode pedir" → confirm
+- "por favor!" → confirm
+- "bora" → confirm
+- "manda ver" → confirm
+- "não" → reject
+- "deixa pra lá" → reject
+- "agora não" → reject
+- "quem é João?" → other
+- "salva esse contato" → other
+- "oi" → other
+
+Responda APENAS com: confirm, reject ou other`;
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        temperature: 0.1,
+        max_tokens: 10,
+      });
+
+      const result = response.choices[0]?.message?.content?.trim().toLowerCase();
+      const validResults = ['confirm', 'reject', 'other'];
+      const classification = validResults.includes(result || '') ? result as 'confirm' | 'reject' | 'other' : 'other';
+
+      this.logger.log(`Classificação de intro: ${classification}`);
+      return classification;
+    } catch (error) {
+      this.logger.error(`Erro ao classificar resposta de intro: ${error.message}`);
+      return 'other';
+    }
+  }
 }
