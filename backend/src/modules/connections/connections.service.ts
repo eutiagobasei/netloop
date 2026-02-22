@@ -282,11 +282,8 @@ export class ConnectionsService {
           email: conn.contact.email,
           context: conn.contact.context,
           location: conn.contact.location,
-          ...(shared.isShared ? {
-            isShared: true,
-            sharedByCount: shared.sharedByCount,
-            sharedByUsers: shared.sharedByUsers,
-          } : {}),
+          // REMOVIDO: sharedByUsers - não mostra quem mais conhece este contato
+          // Isso violava privacidade ao expor nomes de outros usuários
         });
 
         edges.push({
