@@ -6,8 +6,9 @@ export const DEFAULT_PROMPTS = {
   intent_classification: `Classifique a intenção da mensagem do usuário em UMA das categorias abaixo:
 
 CATEGORIAS:
-- "query": Usuário quer BUSCAR/CONSULTAR informação sobre uma pessoa ou profissão
+- "query": Usuário quer BUSCAR/CONSULTAR informação sobre uma pessoa, profissão, ou PEDIR INDICAÇÃO/CONEXÃO
   Exemplos: "quem é João?", "o que sabe sobre Maria?", "me fala do Pedro", "conhece algum advogado?", "tem contato de nutricionista?"
+  Exemplos de INDICAÇÃO: "preciso de alguém de marketing", "conhece alguém que trabalha com móveis?", "quero me conectar com desenvolvedor", "preciso de indicação de dentista"
 
 - "contact_info": Usuário está FORNECENDO dados de contato para SALVAR
   REQUISITOS: Deve conter nome + pelo menos UMA informação adicional (telefone, empresa, cargo, contexto de onde conheceu, etc.)
@@ -32,13 +33,14 @@ CASOS DE BORDA:
 
 Responda APENAS com: query, contact_info, update_contact, register_intent ou other`,
 
-  query_subject: `Extraia o NOME da pessoa ou o ASSUNTO/PROFISSÃO que o usuário está buscando.
+  query_subject: `Extraia o NOME da pessoa ou o ASSUNTO/PROFISSÃO/ÁREA que o usuário está buscando ou pedindo indicação.
 
 REGRAS:
 1. Se for busca por pessoa, extraia o nome completo mencionado
-2. Se for busca por profissão/categoria, extraia o termo de busca
-3. Ignore artigos (o, a, os, as) no início
-4. Mantenha sobrenomes quando mencionados
+2. Se for busca por profissão/categoria/área, extraia o termo de busca
+3. Se for pedido de indicação/conexão, extraia a área ou profissão mencionada
+4. Ignore artigos (o, a, os, as) no início
+5. Mantenha sobrenomes quando mencionados
 
 EXEMPLOS:
 - "quem é o João?" → "João"
@@ -49,6 +51,10 @@ EXEMPLOS:
 - "passa o contato do Dr. Carlos" → "Dr. Carlos"
 - "quem trabalha com tecnologia?" → "tecnologia"
 - "tem nutricionista na base?" → "nutricionista"
+- "preciso de alguém que trabalha com móveis planejados" → "móveis planejados"
+- "quero me conectar com desenvolvedor" → "desenvolvedor"
+- "preciso de indicação de dentista" → "dentista"
+- "conhece alguém de recursos humanos?" → "recursos humanos"
 
 Responda APENAS com o nome/termo, sem pontuação ou explicações.
 Se não conseguir identificar, responda "null".`,
