@@ -1,5 +1,6 @@
 import {
   Injectable,
+  Logger,
   NotFoundException,
   ForbiddenException,
   ConflictException,
@@ -8,13 +9,16 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { TagType } from '@prisma/client';
 import { CreateTagDto } from './dto/create-tag.dto';
 import { UpdateTagDto } from './dto/update-tag.dto';
+import { SlugUtil } from '@/common/utils/slug.util';
 
 @Injectable()
 export class TagsService {
+  private readonly logger = new Logger(TagsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async create(userId: string, dto: CreateTagDto) {
-    const slug = this.generateSlug(dto.name);
+    const slug = SlugUtil.generate(dto.name);
 
     // Verifica se já existe uma tag com esse slug no mesmo escopo
     const existing = await this.prisma.tag.findFirst({
@@ -140,7 +144,7 @@ export class TagsService {
 
     if (dto.name) {
       data.name = dto.name;
-      data.slug = this.generateSlug(dto.name);
+      data.slug = SlugUtil.generate(dto.name);
     }
 
     if (dto.color) {
@@ -207,12 +211,68 @@ export class TagsService {
     });
   }
 
-  private generateSlug(name: string): string {
-    return name
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '');
+  /**
+   * Aplica uma tag em todos os contatos de um usuário
+   * Usado quando um membro entra em um grupo patrocinado
+   */
+  async applyTagToAllUserContacts(userId: string, tagId: string): Promise<number> {
+    const userContacts = await this.prisma.contact.findMany({
+      where: { ownerId: userId },
+      select: { id: true },
+    });
+
+    if (userContacts.length === 0) {
+      this.logger.log(`Nenhum contato encontrado para usuário ${userId}`);
+      return 0;
+    }
+
+    const contactIds = userContacts.map((c) => c.id);
+
+    // Usa createMany com skipDuplicates para evitar erros em tags já existentes
+    const result = await this.prisma.contactTag.createMany({
+      data: contactIds.map((contactId) => ({
+        contactId,
+        tagId,
+      })),
+      skipDuplicates: true,
+    });
+
+    this.logger.log(
+      `Tag ${tagId} aplicada em ${result.count} contatos do usuário ${userId}`,
+    );
+
+    return result.count;
+  }
+
+  /**
+   * Remove uma tag de todos os contatos de um usuário
+   * Usado quando um membro sai de um grupo patrocinado
+   * Retorna a quantidade de contatos afetados
+   */
+  async removeTagFromAllUserContacts(userId: string, tagId: string): Promise<number> {
+    const userContacts = await this.prisma.contact.findMany({
+      where: { ownerId: userId },
+      select: { id: true },
+    });
+
+    if (userContacts.length === 0) {
+      this.logger.log(`Nenhum contato encontrado para usuário ${userId}`);
+      return 0;
+    }
+
+    const contactIds = userContacts.map((c) => c.id);
+
+    const result = await this.prisma.contactTag.deleteMany({
+      where: {
+        contactId: { in: contactIds },
+        tagId,
+      },
+    });
+
+    this.logger.log(
+      `Tag ${tagId} removida de ${result.count} contatos do usuário ${userId}`,
+    );
+
+    return result.count;
   }
 }

@@ -1658,4 +1658,38 @@ export class WhatsappService {
 
     return true;
   }
+
+  /**
+   * Envia notificação de escassez quando um membro sai de um grupo
+   * Cria urgência informando quantas conexões foram perdidas
+   */
+  async sendScarcityNotification(
+    phone: string,
+    groupName: string,
+    lostConnectionsCount: number,
+  ): Promise<boolean> {
+    if (!phone) {
+      this.logger.warn('Telefone não informado para notificação de escassez');
+      return false;
+    }
+
+    const message =
+      `Você saiu do *${groupName}* e perdeu acesso a *${lostConnectionsCount}* conexões.\n\n` +
+      `Entre em contato com o administrador do grupo para renovar sua participação.`;
+
+    try {
+      const sent = await this.evolutionService.sendTextMessage(phone, message);
+
+      if (sent) {
+        this.logger.log(
+          `Notificação de escassez enviada para ${phone}: ${groupName} - ${lostConnectionsCount} conexões`,
+        );
+      }
+
+      return sent;
+    } catch (error) {
+      this.logger.error(`Erro ao enviar notificação de escassez: ${error.message}`);
+      return false;
+    }
+  }
 }

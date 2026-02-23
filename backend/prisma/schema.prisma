@@ -64,6 +64,11 @@ enum MediaType {
   IMAGE
 }
 
+enum MembersVisibility {
+  HIDDEN   // Membros não veem contatos uns dos outros
+  VISIBLE  // Membros veem contatos uns dos outros
+}
+
 // ============================================
 // USER - Usuário do sistema
 // ============================================
@@ -170,6 +175,7 @@ model Tag {
   slug        String
   type        TagType  @default(FREE)
   color       String?  @default("#6366f1")
+  isVerified  Boolean  @default(false) // Herda do grupo - tag verificada/oficial
   groupId     String?  // Se for tag institucional, pertence a um grupo
   createdById String
   createdAt   DateTime @default(now())
@@ -207,13 +213,16 @@ model ContactTag {
 // ============================================
 
 model Group {
-  id          String   @id @default(uuid())
-  name        String   @unique
-  slug        String   @unique
-  description String?
-  isActive    Boolean  @default(true)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                String            @id @default(uuid())
+  name              String            @unique
+  slug              String            @unique
+  description       String?
+  isActive          Boolean           @default(true)
+  isVerified        Boolean           @default(false)     // Selo de grupo verificado/oficial
+  color             String?           @default("#6366f1") // Cor especial da tag do grupo
+  membersVisibility MembersVisibility @default(HIDDEN)    // Visibilidade entre membros (v2)
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
 
   // Relacionamentos
   members GroupMember[]
