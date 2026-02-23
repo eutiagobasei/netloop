@@ -22,9 +22,7 @@ interface Group {
   }
 }
 
-interface GroupsResponse {
-  data: Group[]
-}
+type GroupsResponse = Group[]
 
 interface UserData {
   id: string
@@ -57,7 +55,7 @@ export default function GroupsPage() {
   const [selectedUserId, setSelectedUserId] = useState('')
   const [memberRole, setMemberRole] = useState<'ADMIN' | 'MEMBER'>('MEMBER')
 
-  const { data: groupsData, isLoading } = useQuery<GroupsResponse>({
+  const { data: groups = [], isLoading } = useQuery<GroupsResponse>({
     queryKey: ['groups'],
     queryFn: async () => {
       const response = await api.get('/groups')
@@ -107,7 +105,6 @@ export default function GroupsPage() {
     },
   })
 
-  const groups = groupsData?.data || []
   const filteredGroups = groups.filter(
     (group) =>
       group.name.toLowerCase().includes(search.toLowerCase()) ||
