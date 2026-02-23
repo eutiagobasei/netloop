@@ -12,7 +12,9 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiBearerAuth, ApiQuery, ApiResponse } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Roles } from '../auth/decorators/roles.decorator';
 import { GroupsService } from './groups.service';
 import { CreateGroupDto, UpdateGroupDto, AddMemberDto } from './dto';
 
@@ -24,8 +26,11 @@ export class GroupsController {
   constructor(private readonly groupsService: GroupsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Criar novo grupo' })
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('ADMIN')
+  @ApiOperation({ summary: 'Criar novo grupo (apenas Super Admin)' })
   @ApiResponse({ status: 201, description: 'Grupo criado com sucesso' })
+  @ApiResponse({ status: 403, description: 'Acesso negado - apenas Super Admin' })
   @ApiResponse({ status: 409, description: 'Já existe um grupo com esse nome' })
   async create(
     @CurrentUser('id') userId: string,
