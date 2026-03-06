@@ -227,6 +227,7 @@ model Group {
   // Relacionamentos
   members GroupMember[]
   tags    Tag[]
+  invites GroupInvite[]
 
   @@map("groups")
 }
@@ -365,4 +366,32 @@ model MediaUpload {
   uploadedBy   User?     @relation("MediaUploader", fields: [uploadedById], references: [id])
 
   @@map("media_uploads")
+}
+
+// ============================================
+// GROUP_INVITE - Convites pendentes para grupos
+// ============================================
+
+enum InviteStatus {
+  PENDING       // Aguardando envio de convite
+  INVITED       // Convite enviado via WhatsApp
+  ACCEPTED      // Usuário se cadastrou
+  REJECTED      // Usuário recusou
+}
+
+model GroupInvite {
+  id                 String       @id @default(uuid())
+  groupId            String
+  name               String
+  phone              String
+  company            String?
+  companyDescription String?
+  status             InviteStatus @default(PENDING)
+  invitedAt          DateTime?
+  createdAt          DateTime     @default(now())
+
+  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+
+  @@unique([groupId, phone])
+  @@map("group_invites")
 }

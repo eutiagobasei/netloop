@@ -16,7 +16,13 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { GroupsService } from './groups.service';
-import { CreateGroupDto, UpdateGroupDto, AddMemberDto } from './dto';
+import {
+  CreateGroupDto,
+  UpdateGroupDto,
+  AddMemberDto,
+  ImportInvitesDto,
+  ImportInvitesResponseDto,
+} from './dto';
 
 @ApiTags('Groups')
 @ApiBearerAuth()
@@ -115,5 +121,17 @@ export class GroupsController {
     @Param('id', ParseUUIDPipe) groupId: string,
   ) {
     return this.groupsService.getGroupContacts(groupId, adminUserId);
+  }
+
+  @Post(':id/import-invites')
+  @ApiOperation({ summary: 'Importar convites via planilha (apenas admin)' })
+  @ApiResponse({ status: 201, description: 'Convites importados', type: ImportInvitesResponseDto })
+  @ApiResponse({ status: 403, description: 'Apenas administradores podem importar' })
+  async importInvites(
+    @CurrentUser('id') adminUserId: string,
+    @Param('id', ParseUUIDPipe) groupId: string,
+    @Body() dto: ImportInvitesDto,
+  ): Promise<ImportInvitesResponseDto> {
+    return this.groupsService.importInvites(groupId, adminUserId, dto);
   }
 }

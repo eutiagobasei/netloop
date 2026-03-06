@@ -7,7 +7,13 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { TagType } from '@prisma/client';
-import { CreateGroupDto, UpdateGroupDto, AddMemberDto } from './dto';
+import {
+  CreateGroupDto,
+  UpdateGroupDto,
+  AddMemberDto,
+  ImportInvitesDto,
+  ImportInvitesResponseDto,
+} from './dto';
 import { TagsService } from '../tags/tags.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { SlugUtil } from '@/common/utils/slug.util';
@@ -450,5 +456,107 @@ export class GroupsService {
     if (!membership || !membership.isAdmin || membership.leftAt) {
       throw new ForbiddenException('Apenas administradores do grupo podem realizar esta ação');
     }
+  }
+
+  /**
+   * Importa convites em massa a partir de dados de planilha
+   */
+  async importInvites(
+    groupId: string,
+    adminUserId: string,
+    dto: ImportInvitesDto,
+  ): Promise<ImportInvitesResponseDto> {
+    await this.ensureAdmin(groupId, adminUserId);
+
+    const group = await this.findById(groupId);
+
+    const result: ImportInvitesResponseDto = {
+      created: 0,
+      duplicates: 0,
+      alreadyMembers: 0,
+      errors: [],
+    };
+
+    // Busca membros atuais do grupo para verificar quem já é membro
+    const existingMembers = await this.prisma.groupMember.findMany({
+      where: { groupId, leftAt: null },
+      include: {
+        user: { select: { phone: true } },
+      },
+    });
+
+    const memberPhones = new Set(
+      existingMembers
+        .filter((m) => m.user.phone)
+        .map((m) => this.normalizePhone(m.user.phone!)),
+    );
+
+    // Busca convites existentes para este grupo
+    const existingInvites = await this.prisma.groupInvite.findMany({
+      where: { groupId },
+      select: { phone: true },
+    });
+
+    const existingInvitePhones = new Set(existingInvites.map((i) => i.phone));
+
+    // Processa cada convite
+    for (let i = 0; i < dto.invites.length; i++) {
+      const invite = dto.invites[i];
+      const lineNum = i + 1;
+
+      try {
+        const normalizedPhone = this.normalizePhone(invite.phone);
+
+        // Verifica se já é membro
+        if (memberPhones.has(normalizedPhone)) {
+          result.alreadyMembers++;
+          continue;
+        }
+
+        // Verifica se já existe convite pendente
+        if (existingInvitePhones.has(normalizedPhone)) {
+          result.duplicates++;
+          continue;
+        }
+
+        // Cria o convite
+        await this.prisma.groupInvite.create({
+          data: {
+            groupId,
+            name: invite.name.trim(),
+            phone: normalizedPhone,
+            company: invite.company?.trim() || null,
+            companyDescription: invite.companyDescription?.trim() || null,
+            status: 'PENDING',
+          },
+        });
+
+        // Adiciona ao set para evitar duplicatas no mesmo arquivo
+        existingInvitePhones.add(normalizedPhone);
+        result.created++;
+      } catch (error) {
+        // Em caso de erro de constraint unique (race condition)
+        if ((error as any).code === 'P2002') {
+          result.duplicates++;
+        } else {
+          result.errors.push(`Linha ${lineNum}: Erro ao processar ${invite.name}`);
+          this.logger.error(`Erro ao importar convite linha ${lineNum}: ${error}`);
+        }
+      }
+    }
+
+    this.logger.log(
+      `Importação de convites para grupo ${group.name}: ${result.created} criados, ` +
+        `${result.duplicates} duplicados, ${result.alreadyMembers} já membros`,
+    );
+
+    return result;
+  }
+
+  /**
+   * Normaliza telefone removendo formatação
+   */
+  private normalizePhone(phone: string): string {
+    return phone.replace(/\D/g, '');
   }
 }
