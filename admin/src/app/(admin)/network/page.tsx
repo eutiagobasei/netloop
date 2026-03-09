@@ -7,7 +7,7 @@ import { NetworkGraph } from '@/components/network/network-graph'
 import { NodeDetailsPanel } from '@/components/network/node-details-panel'
 import { ImpersonationBanner } from '@/components/impersonation-banner'
 import { GraphNode } from '@/lib/api'
-import { RefreshCw } from 'lucide-react'
+import { RefreshCw, Users, UserPlus, Share2 } from 'lucide-react'
 
 export default function NetworkPage() {
   const [impersonation, setImpersonation] = useState<{
@@ -53,10 +53,10 @@ export default function NetworkPage() {
 
   if (isLoading) {
     return (
-      <div className="flex h-full items-center justify-center">
+      <div className="flex h-full items-center justify-center bg-dark-bg">
         <div className="text-center">
-          <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent mx-auto" />
-          <p className="mt-4 text-gray-600">Carregando sua rede...</p>
+          <div className="h-10 w-10 animate-spin rounded-full border-4 border-primary-500 border-t-transparent mx-auto" />
+          <p className="mt-4 text-gray-400">Carregando sua rede...</p>
         </div>
       </div>
     )
@@ -64,11 +64,14 @@ export default function NetworkPage() {
 
   if (!graph || graph.nodes.length === 0) {
     return (
-      <div className="flex h-full items-center justify-center">
-        <div className="text-center">
-          <p className="text-lg font-medium text-gray-900">Nenhuma conexao encontrada</p>
-          <p className="mt-2 text-gray-600">
-            Comece adicionando contatos e criando conexoes para visualizar sua rede.
+      <div className="flex h-full items-center justify-center bg-dark-bg">
+        <div className="text-center max-w-md">
+          <div className="mx-auto w-16 h-16 rounded-full bg-primary-500/20 flex items-center justify-center mb-4">
+            <Users className="w-8 h-8 text-primary-400" />
+          </div>
+          <p className="text-xl font-semibold text-white mb-2">Nenhuma conexão encontrada</p>
+          <p className="text-gray-400">
+            Comece adicionando contatos e criando conexões para visualizar sua rede.
           </p>
         </div>
       </div>
@@ -82,7 +85,7 @@ export default function NetworkPage() {
   }
 
   return (
-    <div className="relative h-full flex flex-col">
+    <div className="relative h-full flex flex-col bg-dark-bg">
       {/* Banner de impersonação */}
       {impersonation.isImpersonating && impersonation.userName && (
         <ImpersonationBanner
@@ -92,55 +95,67 @@ export default function NetworkPage() {
       )}
 
       <div className="relative flex-1">
-      {/* Header com estatisticas */}
-      <div className="absolute left-4 top-4 z-10 flex items-center gap-4">
-        <div className="rounded-lg bg-white p-3 shadow-md">
-          <h2 className="text-sm font-medium text-gray-500">Minha Rede</h2>
-          <p className="text-2xl font-bold text-gray-900">{stats.total} conexoes</p>
+        {/* Header com estatísticas */}
+        <div className="absolute left-4 top-4 z-10 flex items-center gap-3">
+          {/* Card principal */}
+          <div className="rounded-xl bg-white/5 backdrop-blur-md border border-white/10 p-4">
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-primary-500/20 flex items-center justify-center">
+                <Share2 className="w-5 h-5 text-primary-400" />
+              </div>
+              <div>
+                <h2 className="text-sm font-medium text-gray-400">Minha Rede</h2>
+                <p className="text-2xl font-bold text-white">{stats.total} <span className="text-base font-normal text-gray-400">conexões</span></p>
+              </div>
+            </div>
+          </div>
+
+          {/* Botão atualizar */}
+          <button
+            onClick={() => refetch()}
+            className="flex items-center gap-2 rounded-xl bg-white/5 backdrop-blur-md border border-white/10 px-4 py-3 text-sm font-medium text-gray-300 hover:bg-white/10 hover:text-white transition-all"
+          >
+            <RefreshCw className="h-4 w-4" />
+            Atualizar
+          </button>
         </div>
-        <button
-          onClick={() => refetch()}
-          className="flex items-center gap-2 rounded-lg bg-white px-3 py-2 text-sm font-medium text-gray-700 shadow-md hover:bg-gray-50"
-        >
-          <RefreshCw className="h-4 w-4" />
-          Atualizar
-        </button>
-      </div>
 
-      {/* Legenda */}
-      <div className="absolute left-4 bottom-4 z-10 rounded-lg bg-white p-3 shadow-md">
-        <p className="text-xs font-medium text-gray-500 mb-2">Legenda</p>
-        <div className="space-y-1">
-          <div className="flex items-center gap-2">
-            <div className="h-4 w-4 rounded-full bg-green-500" />
-            <span className="text-xs text-gray-600">Voce</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-3.5 w-3.5 rounded-full bg-blue-500" />
-            <span className="text-xs text-gray-600">1o Nivel ({stats.firstDegree})</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-3 w-3 rounded-full bg-gray-500" />
-            <span className="text-xs text-gray-600">2o Nivel ({stats.secondDegree})</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="h-3.5 w-3.5 rounded-full border-2 border-amber-500 bg-blue-500" />
-            <span className="text-xs text-gray-600">Contato em Comum</span>
+        {/* Legenda */}
+        <div className="absolute left-4 bottom-4 z-10 rounded-xl bg-white/5 backdrop-blur-md border border-white/10 p-4">
+          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-3">Legenda</p>
+          <div className="space-y-2">
+            <div className="flex items-center gap-3">
+              <div className="h-4 w-4 rounded-full bg-green-500 shadow-lg shadow-green-500/30" />
+              <span className="text-sm text-gray-300">Você</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <div className="h-3.5 w-3.5 rounded-full bg-blue-500 shadow-lg shadow-blue-500/30" />
+              </div>
+              <span className="text-sm text-gray-300">1º Nível <span className="text-gray-500">({stats.firstDegree})</span></span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-3 w-3 rounded-full bg-indigo-500 shadow-lg shadow-indigo-500/30" />
+              <span className="text-sm text-gray-300">2º Nível <span className="text-gray-500">({stats.secondDegree})</span></span>
+            </div>
+            <div className="flex items-center gap-3">
+              <div className="h-3.5 w-3.5 rounded-full border-2 border-amber-400 bg-blue-500 shadow-lg shadow-amber-400/30" />
+              <span className="text-sm text-gray-300">Contato em Comum</span>
+            </div>
           </div>
         </div>
-      </div>
 
-      {/* Grafo */}
-      <NetworkGraph
-        data={graph}
-        onNodeClick={handleNodeClick}
-        selectedNodeId={selectedNode?.id}
-      />
+        {/* Grafo */}
+        <NetworkGraph
+          data={graph}
+          onNodeClick={handleNodeClick}
+          selectedNodeId={selectedNode?.id}
+        />
 
-      {/* Painel de detalhes */}
-      {selectedNode && (
-        <NodeDetailsPanel node={selectedNode} onClose={handleClosePanel} />
-      )}
+        {/* Painel de detalhes */}
+        {selectedNode && (
+          <NodeDetailsPanel node={selectedNode} onClose={handleClosePanel} />
+        )}
       </div>
     </div>
   )
