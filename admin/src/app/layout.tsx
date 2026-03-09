@@ -13,8 +13,8 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   return (
-    <html lang="pt-BR">
-      <body className="font-sans">
+    <html lang="pt-BR" className="dark">
+      <body className="font-sans bg-[#0a0a0f]">
         <QueryProvider>
           {children}
         </QueryProvider>
