@@ -42,8 +42,8 @@ export default function AdminLayout({
 
   if (isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
+      <div className="dark flex h-screen items-center justify-center bg-dark-bg">
+        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-500 border-t-transparent" />
       </div>
     )
   }
@@ -53,8 +53,8 @@ export default function AdminLayout({
   if (pathname === '/network' && impersonatingCookie && isAuthenticated) {
     // Mostrar layout simplificado para impersonação (sem sidebar)
     return (
-      <div className="flex h-screen flex-col">
-        <main className="flex-1 overflow-auto bg-gray-50">
+      <div className="dark flex h-screen flex-col bg-dark-bg">
+        <main className="flex-1 overflow-auto">
           {children}
         </main>
       </div>
@@ -66,9 +66,9 @@ export default function AdminLayout({
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="dark flex h-screen bg-dark-bg">
       <Sidebar />
-      <main className="flex-1 overflow-auto bg-gray-50">
+      <main className="flex-1 overflow-auto">
         {children}
       </main>
     </div>
