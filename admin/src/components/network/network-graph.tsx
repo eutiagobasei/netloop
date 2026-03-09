@@ -232,6 +232,13 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
 
   const linkCanvasObject = useCallback(
     (link: any, ctx: CanvasRenderingContext2D) => {
+      // Skip if positions not yet calculated
+      if (!link.source || !link.target ||
+          !isFinite(link.source.x) || !isFinite(link.source.y) ||
+          !isFinite(link.target.x) || !isFinite(link.target.y)) {
+        return
+      }
+
       const strength = link.strength as keyof typeof EDGE_COLORS
       const color = EDGE_COLORS[strength] || EDGE_COLORS.MODERATE
       const width = EDGE_WIDTHS[strength] || EDGE_WIDTHS.MODERATE
