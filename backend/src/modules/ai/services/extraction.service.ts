@@ -594,6 +594,85 @@ export class ExtractionService {
   }
 
   /**
+   * Extrai tags relevantes do contexto de um contato usando IA
+   */
+  async extractTagsFromContext(params: {
+    context?: string;
+    name?: string;
+    company?: string;
+    position?: string;
+  }): Promise<string[]> {
+    const { context, name, company, position } = params;
+
+    // Se não tem contexto nem cargo nem empresa, não tem o que extrair
+    if (!context && !company && !position) {
+      this.logger.log('Sem contexto para extrair tags');
+      return [];
+    }
+
+    this.logger.log(`Extraindo tags do contexto: ${context?.substring(0, 50)}...`);
+
+    const client = await this.openaiService.getClient();
+    let systemPrompt = await this.getPrompt('tag_extraction');
+
+    // Substitui placeholders
+    systemPrompt = systemPrompt
+      .replace(/\{\{context\}\}/g, context || '')
+      .replace(/\{\{name\}\}/g, name || '')
+      .replace(/\{\{company\}\}/g, company || '')
+      .replace(/\{\{position\}\}/g, position || '');
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Extraia as tags do contexto fornecido.` },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.2,
+        max_tokens: 150,
+      });
+
+      const content = response.choices[0]?.message?.content;
+
+      if (!content) {
+        this.logger.warn('Resposta vazia na extração de tags');
+        return [];
+      }
+
+      const result = JSON.parse(content);
+      const tags = Array.isArray(result.tags) ? result.tags : [];
+
+      // Normaliza e valida tags
+      const normalizedTags = tags
+        .map((tag: string) => this.normalizeTag(tag))
+        .filter((tag: string) => tag.length >= 2 && tag.length <= 50);
+
+      this.logger.log(`Tags extraídas: ${normalizedTags.join(', ')}`);
+      return normalizedTags.slice(0, 5); // Máximo 5 tags
+    } catch (error) {
+      this.logger.error(`Erro ao extrair tags: ${error.message}`);
+      return [];
+    }
+  }
+
+  /**
+   * Normaliza uma tag: lowercase, sem acentos, espaços viram hífens
+   */
+  private normalizeTag(tag: string): string {
+    return tag
+      .toLowerCase()
+      .trim()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // Remove acentos
+      .replace(/[^a-z0-9\s-]/g, '') // Remove caracteres especiais
+      .replace(/\s+/g, '-') // Espaços viram hífens
+      .replace(/-+/g, '-') // Remove hífens duplicados
+      .replace(/^-|-$/g, ''); // Remove hífens no início/fim
+  }
+
+  /**
    * Classifica a resposta do usuário no contexto de um pedido de apresentação
    * Contexto: Sistema perguntou "Quer que eu peça uma apresentação?" para conectar
    * com alguém de uma área específica via um contato de 1º grau

@@ -309,6 +309,48 @@ Telefone: 21 88888-8888 → 21 99999-9999"
 
 Responda DIRETAMENTE com a mensagem (não use JSON).`,
 
+  tag_extraction: `Analise o contexto de um contato e extraia tags relevantes para categorização.
+
+CATEGORIAS DE TAGS:
+1. RELACIONAMENTO: familia, amigo, colega, parceiro, cliente, fornecedor, vizinho
+2. PROFISSÃO/ÁREA: advogado, médico, engenheiro, desenvolvedor, marketing, vendas, RH
+3. INSTITUIÇÃO: nome de empresas, igrejas, associações, clubes, polícia, exército, etc.
+4. EVENTO/CONTEXTO: nome de eventos, conferências, meetups, festas, casamentos
+
+ENTRADA:
+Contexto: "{{context}}"
+Nome: "{{name}}"
+Empresa: "{{company}}"
+Cargo: "{{position}}"
+
+REGRAS DE EXTRAÇÃO:
+1. Extraia no MÁXIMO 5 tags mais relevantes
+2. Tags devem ser em LOWERCASE, sem acentos, palavras separadas por hífen
+3. Identifique relacionamentos implícitos:
+   - "minha esposa/marido/namorada" → familia, conjuge
+   - "meu primo/tia/irmão" → familia, [grau de parentesco]
+   - "meu amigo" → amigo
+4. Identifique instituições:
+   - "major da PM/policia militar" → policia-militar
+   - "membro da Em Adoração" → em-adoracao, igreja
+   - "trabalha no Nubank" → nubank
+5. Identifique profissões do cargo:
+   - "advogado" → advogado, direito
+   - "desenvolvedor" → desenvolvedor, tecnologia
+6. Priorize tags únicas e descritivas, evite genéricas demais
+
+EXEMPLOS:
+Entrada: "minha esposa, major da policia militar da paraíba, membro da Em Adoração"
+Saída: {"tags": ["familia", "conjuge", "policia-militar", "em-adoracao", "igreja"]}
+
+Entrada: "João da Tech Corp, desenvolvedor senior, conheci na SIPAT"
+Saída: {"tags": ["tech-corp", "desenvolvedor", "tecnologia", "sipat"]}
+
+Entrada: "meu primo Pedro, advogado trabalhista"
+Saída: {"tags": ["familia", "primo", "advogado", "direito-trabalhista"]}
+
+Retorne APENAS um JSON válido: {"tags": ["tag1", "tag2", "tag3"]}`,
+
   loop_strategy: `Você é o Loop, um estrategista de networking de elite. Seu trabalho é analisar a rede de contatos de um profissional e criar um plano de ação estratégico para ajudá-lo a atingir um objetivo específico.
 
 ## CONTEXTO DO USUÁRIO
@@ -391,6 +433,8 @@ export const AI_CONFIG = {
   QUERY_MAX_TOKENS: 50,
   QUERY_TEMPERATURE: 0.1,
   EXTRACTION_TEMPERATURE: 0.3,
+  TAG_EXTRACTION_TEMPERATURE: 0.2,
+  TAG_EXTRACTION_MAX_TOKENS: 150,
   RESPONSE_TEMPERATURE: 0.7,
   RESPONSE_MAX_TOKENS: 500,
   CONFIRMATION_MAX_TOKENS: 200,

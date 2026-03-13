@@ -164,6 +164,56 @@ export const loopApi = {
     api.post<LoopPlanResponse>('/ai/loop/plan', { goal }),
 }
 
+// Tags Types
+export interface Tag {
+  id: string
+  name: string
+  slug: string
+  type: 'FREE' | 'INSTITUTIONAL'
+  color: string | null
+  isVerified: boolean
+  groupId: string | null
+  group?: { id: string; name: string }
+  createdById: string
+  createdAt: string
+  _count?: { contacts: number }
+}
+
+export interface CreateTagDto {
+  name: string
+  color?: string
+  type?: 'FREE' | 'INSTITUTIONAL'
+  groupId?: string
+}
+
+export interface UpdateTagDto {
+  name?: string
+  color?: string
+}
+
+export const tagsApi = {
+  getAll: (type?: 'FREE' | 'INSTITUTIONAL') =>
+    api.get<Tag[]>('/tags', { params: { type } }),
+
+  getById: (id: string) =>
+    api.get<Tag>(`/tags/${id}`),
+
+  create: (data: CreateTagDto) =>
+    api.post<Tag>('/tags', data),
+
+  update: (id: string, data: UpdateTagDto) =>
+    api.patch<Tag>(`/tags/${id}`, data),
+
+  delete: (id: string) =>
+    api.delete(`/tags/${id}`),
+}
+
+// Contacts API
+export const contactsApi = {
+  updateTags: (contactId: string, tagIds: string[]) =>
+    api.patch(`/contacts/${contactId}`, { tagIds }),
+}
+
 export const settingsApi = {
   getAll: (category?: string) =>
     api.get<Setting[]>('/settings', { params: { category } }),
