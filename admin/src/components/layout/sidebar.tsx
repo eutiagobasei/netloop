@@ -15,6 +15,7 @@ import {
   Users,
   Brain,
   Building2,
+  Sparkles,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
@@ -32,6 +33,7 @@ const adminNavigation = [
 
 const userNavigation = [
   { name: 'Minha Rede', href: '/network', icon: Network },
+  { name: 'Loop', href: '/loop', icon: Sparkles },
 ]
 
 const environments = [
@@ -48,7 +50,7 @@ export function Sidebar() {
 
   // Detectar ambiente baseado na rota atual
   useEffect(() => {
-    if (pathname.startsWith('/network')) {
+    if (pathname.startsWith('/network') || pathname.startsWith('/loop')) {
       setEnvironment('user')
     } else {
       setEnvironment('admin')

@@ -136,7 +136,22 @@ REGRAS:
 async function main() {
   console.log('🌱 Iniciando seed do banco de dados...');
 
-  // Cria usuário admin
+  // Cria usuário super admin (produção)
+  const superAdminPassword = await bcrypt.hash('DngEEOO7LT7AhVCnsH1i', 12);
+  const superAdmin = await prisma.user.upsert({
+    where: { email: 'supa@hprod.io' },
+    update: {},
+    create: {
+      email: 'supa@hprod.io',
+      password: superAdminPassword,
+      name: 'Super Admin',
+      phone: '+5500000000000',
+      role: UserRole.ADMIN,
+    },
+  });
+  console.log('✅ Super Admin criado:', superAdmin.email);
+
+  // Cria usuário admin legacy (desenvolvimento)
   const adminPassword = await bcrypt.hash('admin123', 12);
   const admin = await prisma.user.upsert({
     where: { email: 'admin@netloop.com' },
@@ -149,7 +164,7 @@ async function main() {
       role: UserRole.ADMIN,
     },
   });
-  console.log('✅ Admin criado:', admin.email);
+  console.log('✅ Admin dev criado:', admin.email);
 
   // Cria usuário de teste
   const userPassword = await bcrypt.hash('user123', 12);
@@ -330,7 +345,8 @@ async function main() {
 
   console.log('\n🎉 Seed concluído com sucesso!');
   console.log('\n📋 Credenciais:');
-  console.log('   Admin: admin@netloop.com / admin123');
+  console.log('   Super Admin (PROD): supa@hprod.io / [ver .env.prod]');
+  console.log('   Admin (DEV): admin@netloop.com / admin123');
   console.log('   Usuário: teste@netloop.com / user123');
 }
 

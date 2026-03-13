@@ -37,3 +37,6 @@ redis_data/
 
 # Prisma
 prisma/migrations/**/migration_lock.toml
+
+# Backups (keep directory, ignore sql files)
+backups/*.sql

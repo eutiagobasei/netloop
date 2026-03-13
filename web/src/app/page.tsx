@@ -1,24 +1,17 @@
-'use client'
-
-import { useEffect } from 'react'
-import { useRouter } from 'next/navigation'
-import Cookies from 'js-cookie'
+import { Navbar } from '@/components/landing/navbar'
+import { HeroSection } from '@/components/landing/hero-section'
+import { FeaturesSection } from '@/components/landing/features-section'
+import { HowItWorksSection } from '@/components/landing/how-it-works-section'
+import { Footer } from '@/components/landing/footer'
 
 export default function Home() {
-  const router = useRouter()
-
-  useEffect(() => {
-    const token = Cookies.get('accessToken')
-    if (token) {
-      router.replace('/network')
-    } else {
-      router.replace('/login')
-    }
-  }, []) // eslint-disable-line react-hooks/exhaustive-deps
-
   return (
-    <div className="flex h-screen items-center justify-center">
-      <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary-600 border-t-transparent" />
-    </div>
+    <main className="dark">
+      <Navbar />
+      <HeroSection />
+      <FeaturesSection />
+      <HowItWorksSection />
+      <Footer />
+    </main>
   )
 }
