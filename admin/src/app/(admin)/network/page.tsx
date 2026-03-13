@@ -94,7 +94,7 @@ export default function NetworkPage() {
         />
       )}
 
-      <div className="relative flex-1">
+      <div className="relative flex-1 overflow-hidden">
         {/* Header com estatísticas */}
         <div className="absolute left-4 top-4 z-10 flex items-center gap-3">
           {/* Card principal */}
