@@ -280,7 +280,7 @@ export class ConnectionsService {
           position: conn.contact.position,
           phone: conn.contact.phone,
           email: conn.contact.email,
-          context: conn.contact.context,
+          context: conn.context, // Contexto da CONEXÃO (como você conhece a pessoa)
           location: conn.contact.location,
           // REMOVIDO: sharedByUsers - não mostra quem mais conhece este contato
           // Isso violava privacidade ao expor nomes de outros usuários

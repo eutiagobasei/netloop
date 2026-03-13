@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useCallback, useEffect, useState } from 'react'
+import { useRef, useCallback, useEffect, useState, useMemo } from 'react'
 import dynamic from 'next/dynamic'
 import { GraphData, GraphNode } from '@/lib/api'
 
@@ -60,7 +60,7 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
   const fgRef = useRef<any>(null)
   const containerRef = useRef<HTMLDivElement>(null)
   const [dimensions, setDimensions] = useState({ width: 800, height: 600 })
-  const [hoveredNode, setHoveredNode] = useState<string | null>(null)
+  const [hoveredNodeId, setHoveredNodeId] = useState<string | null>(null)
 
   useEffect(() => {
     const updateDimensions = () => {
@@ -88,7 +88,7 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
     }
   }, [data])
 
-  const graphData = {
+  const graphData = useMemo(() => ({
     nodes: data.nodes.map((node) => ({
       ...node,
       val: NODE_SIZES[node.degree as keyof typeof NODE_SIZES] || 10,
@@ -98,12 +98,10 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
       target: edge.target,
       strength: edge.strength,
     })),
-  }
+  }), [data.nodes, data.edges])
 
   const handleNodeClick = useCallback(
     (node: any) => {
-      console.log('Node clicked:', node)
-      alert(`Clicou: ${node.name}`)
       if (onNodeClick) {
         onNodeClick(node as GraphNode)
       }
@@ -112,7 +110,7 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
   )
 
   const handleNodeHover = useCallback((node: any) => {
-    setHoveredNode(node ? node.id : null)
+    setHoveredNodeId(node ? node.id : null)
   }, [])
 
   const nodeCanvasObject = useCallback(
@@ -128,7 +126,7 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
       const glowColor = NODE_GLOW_COLORS[degree as keyof typeof NODE_GLOW_COLORS] || 'rgba(99, 102, 241, 0.2)'
       const size = NODE_SIZES[degree as keyof typeof NODE_SIZES] || 10
       const isSelected = node.id === selectedNodeId
-      const isHovered = node.id === hoveredNode
+      const isHovered = node.id === hoveredNodeId
 
       // Glow effect para todos os nós
       const gradient = ctx.createRadialGradient(
@@ -229,7 +227,7 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
         ctx.fillText(label, node.x, node.y + size / 2 + (node.isShared ? 8 : 4))
       }
     },
-    [selectedNodeId, hoveredNode]
+    [selectedNodeId, hoveredNodeId]
   )
 
   const linkCanvasObject = useCallback(
