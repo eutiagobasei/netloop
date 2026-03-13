@@ -102,6 +102,8 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
 
   const handleNodeClick = useCallback(
     (node: any) => {
+      console.log('Node clicked:', node)
+      alert(`Clicou: ${node.name}`)
       if (onNodeClick) {
         onNodeClick(node as GraphNode)
       }
