@@ -6,10 +6,11 @@ import {
   Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
 import { AIService } from './ai.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { CreateLoopPlanDto, LoopPlanResponse } from './dto/loop.dto';
 
 @ApiTags('AI')
 @ApiBearerAuth()
@@ -71,5 +72,17 @@ export class AIController {
   async process(@Body() body: { audioUrl: string }) {
     const result = await this.aiService.processMessage(body.audioUrl);
     return result;
+  }
+
+  @Post('loop/plan')
+  @ApiOperation({ summary: 'Gerar plano estratégico de networking do Loop' })
+  @ApiBody({ type: CreateLoopPlanDto })
+  @ApiResponse({ status: 200, description: 'Plano estratégico gerado' })
+  @ApiResponse({ status: 400, description: 'Objetivo inválido' })
+  async generateLoopPlan(
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateLoopPlanDto,
+  ): Promise<LoopPlanResponse> {
+    return this.aiService.generateLoopPlan(userId, dto.goal);
   }
 }

@@ -5,6 +5,7 @@ import { OpenAIService } from './services/openai.service';
 import { TranscriptionService } from './services/transcription.service';
 import { ExtractionService } from './services/extraction.service';
 import { EmbeddingService } from './services/embedding.service';
+import { LoopService } from './services/loop.service';
 import { SettingsModule } from '../settings/settings.module';
 import { ContactsModule } from '../contacts/contacts.module';
 
@@ -20,7 +21,8 @@ import { ContactsModule } from '../contacts/contacts.module';
     TranscriptionService,
     ExtractionService,
     EmbeddingService,
+    LoopService,
   ],
-  exports: [AIService, ExtractionService, EmbeddingService],
+  exports: [AIService, ExtractionService, EmbeddingService, LoopService],
 })
 export class AIModule {}

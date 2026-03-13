@@ -19,6 +19,7 @@ import {
   ChevronDown,
   ChevronUp,
   Eye,
+  Target,
 } from 'lucide-react'
 import { Header } from '@/components/layout/header'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
@@ -160,6 +161,21 @@ const PROMPT_METADATA: Record<
       { name: '{{missingFields}}', description: 'Lista de campos faltantes' },
     ],
   },
+  prompt_loop_strategy: {
+    title: 'Loop - Estrategista de Networking',
+    description: 'Gera planos estratégicos de ação baseados na rede de contatos do usuário',
+    icon: Target,
+    color: 'pink',
+    category: 'response',
+    placeholders: [
+      { name: '{{userProfile}}', description: 'JSON com perfil do usuário (nome, email)' },
+      { name: '{{contacts}}', description: 'JSON array dos contatos de 1º grau' },
+      { name: '{{secondDegreeContacts}}', description: 'JSON array dos contatos de 2º grau' },
+      { name: '{{goal}}', description: 'Objetivo digitado pelo usuário' },
+      { name: '{{analyzedCount}}', description: 'Número de contatos analisados' },
+      { name: '{{totalCount}}', description: 'Número total de contatos' },
+    ],
+  },
 }
 
 // Prompts padrão (fallback para restaurar)
@@ -208,6 +224,16 @@ Responda de forma amigável.`,
 
   prompt_context_question: `Salvei {{name}} ({{phone}}). Faltam: {{missingFields}}
 Pergunte sobre o dado mais importante.`,
+
+  prompt_loop_strategy: `Você é o Loop, estrategista de networking de elite.
+Analise a rede do usuário e crie um plano de ação estratégico.
+
+Perfil: {{userProfile}}
+Contatos 1º grau: {{contacts}}
+Contatos 2º grau: {{secondDegreeContacts}}
+Objetivo: {{goal}}
+
+Responda em JSON com: goal, decomposedNeeds[], actionPlan[], gaps[]`,
 }
 
 const colorClasses: Record<string, { bg: string; icon: string; border: string; gradient: string }> = {

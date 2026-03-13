@@ -95,4 +95,35 @@ export const connectionsApi = {
     api.get('/connections/second-degree', { params: { search } }),
 }
 
+// Loop API types
+export interface LoopActionItem {
+  contactId: string
+  contactName: string
+  order: number
+  level: 1 | 2
+  approach: string
+  whatToAsk: string
+  unlocks: string[]
+}
+
+export interface LoopGap {
+  need: string
+  description: string
+}
+
+export interface LoopPlanResponse {
+  goal: string
+  decomposedNeeds: string[]
+  actionPlan: LoopActionItem[]
+  gaps: LoopGap[]
+  generatedAt: string
+  contactsAnalyzed: number
+  totalContacts: number
+}
+
+export const loopApi = {
+  createPlan: (goal: string) =>
+    api.post<LoopPlanResponse>('/ai/loop/plan', { goal }),
+}
+
 export default api

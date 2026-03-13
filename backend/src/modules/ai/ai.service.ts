@@ -3,10 +3,12 @@ import { OpenAIService } from './services/openai.service';
 import { TranscriptionService } from './services/transcription.service';
 import { ExtractionService, MessageIntent } from './services/extraction.service';
 import { EmbeddingService } from './services/embedding.service';
+import { LoopService } from './services/loop.service';
 import {
   ExtractedContactData,
   ExtractionResult,
 } from './dto/extracted-contact.dto';
+import { LoopPlanResponse } from './dto/loop.dto';
 
 @Injectable()
 export class AIService {
@@ -17,6 +19,7 @@ export class AIService {
     private readonly transcriptionService: TranscriptionService,
     private readonly extractionService: ExtractionService,
     private readonly embeddingService: EmbeddingService,
+    private readonly loopService: LoopService,
   ) {}
 
   /**
@@ -124,5 +127,12 @@ export class AIService {
     area: string
   ): Promise<'confirm' | 'reject' | 'other'> {
     return this.extractionService.classifyIntroResponse(userMessage, connectorName, area);
+  }
+
+  /**
+   * Gera plano estratégico de networking do Loop
+   */
+  async generateLoopPlan(userId: string, goal: string): Promise<LoopPlanResponse> {
+    return this.loopService.generatePlan(userId, goal);
   }
 }

@@ -1,9 +1,10 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, usePathname } from 'next/navigation'
+import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
-import { LogOut, Network } from 'lucide-react'
+import { LogOut, Network, Sparkles } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   ImpersonationBanner,
@@ -17,6 +18,7 @@ export default function AppLayout({
   children: React.ReactNode
 }) {
   const router = useRouter()
+  const pathname = usePathname()
   const { user, isLoading, isAuthenticated, logout } = useAuth()
   const [impersonation, setImpersonation] = useState<{
     isImpersonating: boolean
@@ -46,28 +48,58 @@ export default function AppLayout({
   }
 
   return (
-    <div className="flex h-screen flex-col">
+    <div className="dark flex h-screen flex-col bg-dark-bg">
       {impersonation.isImpersonating && impersonation.userName && (
         <ImpersonationBanner
           userName={impersonation.userName}
           onExit={exitImpersonation}
         />
       )}
-      <header className="flex h-16 items-center justify-between border-b bg-white px-6">
-        <div className="flex items-center gap-2">
-          <Network className="h-6 w-6 text-primary-600" />
-          <span className="text-xl font-bold text-gray-900">NetLoop</span>
+      <header className="flex h-16 items-center justify-between border-b border-white/10 bg-dark-bg/80 backdrop-blur-md px-6">
+        <div className="flex items-center gap-6">
+          <Link href="/network" className="flex items-center gap-2">
+            <Network className="h-6 w-6 text-primary-500" />
+            <span className="text-xl font-bold text-white">NetLoop</span>
+          </Link>
+          <nav className="flex items-center gap-1">
+            <Link
+              href="/network"
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                pathname === '/network'
+                  ? 'bg-white/10 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <Network className="h-4 w-4" />
+                Rede
+              </span>
+            </Link>
+            <Link
+              href="/loop"
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                pathname === '/loop'
+                  ? 'bg-white/10 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <Sparkles className="h-4 w-4" />
+                Loop
+              </span>
+            </Link>
+          </nav>
         </div>
         <div className="flex items-center gap-4">
-          <span className="text-sm text-gray-600">
+          <span className="text-sm text-gray-400">
             {user?.name || user?.email}
           </span>
-          <Button variant="ghost" size="sm" onClick={logout}>
+          <Button variant="ghost" size="sm" onClick={logout} className="text-gray-400 hover:text-white hover:bg-white/10">
             <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </header>
-      <main className="flex-1 overflow-hidden bg-gray-50">
+      <main className="flex-1 overflow-hidden bg-dark-bg">
         {children}
       </main>
     </div>
