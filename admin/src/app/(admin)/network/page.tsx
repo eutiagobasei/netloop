@@ -44,6 +44,7 @@ export default function NetworkPage() {
   const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null)
 
   const handleNodeClick = (node: GraphNode) => {
+    alert(`Clicou em: ${node.name} (${node.degree}º nível)`)
     setSelectedNode(node)
   }
 
