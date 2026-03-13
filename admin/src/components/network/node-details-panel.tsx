@@ -27,21 +27,25 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
   const degreeColor = DEGREE_COLORS[node.degree as keyof typeof DEGREE_COLORS] || 'bg-gray-100 text-gray-800'
 
   return (
-    <div className="absolute right-0 top-0 h-full w-80 border-l bg-white shadow-lg">
-      <div className="flex items-center justify-between border-b p-4">
-        <h3 className="font-semibold text-gray-900">Detalhes</h3>
+    <div className="absolute right-0 top-0 h-full w-80 border-l border-white/10 bg-dark-card shadow-xl z-50">
+      <div className="flex items-center justify-between border-b border-white/10 p-4">
+        <h3 className="font-semibold text-white">Detalhes</h3>
         <button
           onClick={onClose}
-          className="rounded-md p-1 hover:bg-gray-100"
+          className="rounded-md p-1 hover:bg-white/10 text-gray-400 hover:text-white"
         >
           <X className="h-4 w-4" />
         </button>
       </div>
 
-      <div className="p-4 space-y-4">
+      <div className="p-4 space-y-4 overflow-y-auto max-h-[calc(100%-60px)]">
         <div>
-          <h4 className="text-lg font-semibold text-gray-900">{node.name}</h4>
-          <span className={`mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${degreeColor}`}>
+          <h4 className="text-lg font-semibold text-white">{node.name}</h4>
+          <span className={`mt-1 inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${
+            node.degree === 0 ? 'bg-green-500/20 text-green-400' :
+            node.degree === 1 ? 'bg-blue-500/20 text-blue-400' :
+            'bg-gray-500/20 text-gray-400'
+          }`}>
             <Users className="mr-1 h-3 w-3" />
             {degreeLabel}
           </span>
@@ -49,87 +53,87 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
 
         {node.company && (
           <div className="flex items-start gap-2">
-            <Building2 className="h-4 w-4 mt-0.5 text-gray-400" />
+            <Building2 className="h-4 w-4 mt-0.5 text-gray-500" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Empresa</p>
-              <p className="text-sm text-gray-600">{node.company}</p>
+              <p className="text-sm font-medium text-gray-400">Empresa</p>
+              <p className="text-sm text-gray-200">{node.company}</p>
             </div>
           </div>
         )}
 
         {node.position && (
           <div className="flex items-start gap-2">
-            <Briefcase className="h-4 w-4 mt-0.5 text-gray-400" />
+            <Briefcase className="h-4 w-4 mt-0.5 text-gray-500" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Cargo</p>
-              <p className="text-sm text-gray-600">{node.position}</p>
+              <p className="text-sm font-medium text-gray-400">Cargo</p>
+              <p className="text-sm text-gray-200">{node.position}</p>
             </div>
           </div>
         )}
 
         {node.phone && (
           <div className="flex items-start gap-2">
-            <Phone className="h-4 w-4 mt-0.5 text-gray-400" />
+            <Phone className="h-4 w-4 mt-0.5 text-gray-500" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Telefone</p>
-              <p className="text-sm text-gray-600">{node.phone}</p>
+              <p className="text-sm font-medium text-gray-400">Telefone</p>
+              <p className="text-sm text-gray-200">{node.phone}</p>
             </div>
           </div>
         )}
 
         {node.email && (
           <div className="flex items-start gap-2">
-            <Mail className="h-4 w-4 mt-0.5 text-gray-400" />
+            <Mail className="h-4 w-4 mt-0.5 text-gray-500" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Email</p>
-              <p className="text-sm text-gray-600">{node.email}</p>
+              <p className="text-sm font-medium text-gray-400">Email</p>
+              <p className="text-sm text-gray-200">{node.email}</p>
             </div>
           </div>
         )}
 
         {node.location && (
           <div className="flex items-start gap-2">
-            <MapPin className="h-4 w-4 mt-0.5 text-gray-400" />
+            <MapPin className="h-4 w-4 mt-0.5 text-gray-500" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Localização</p>
-              <p className="text-sm text-gray-600">{node.location}</p>
+              <p className="text-sm font-medium text-gray-400">Localização</p>
+              <p className="text-sm text-gray-200">{node.location}</p>
             </div>
           </div>
         )}
 
         {node.context && (
           <div className="flex items-start gap-2">
-            <FileText className="h-4 w-4 mt-0.5 text-gray-400" />
+            <FileText className="h-4 w-4 mt-0.5 text-gray-500" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Contexto</p>
-              <p className="text-sm text-gray-600 whitespace-pre-line">{node.context}</p>
+              <p className="text-sm font-medium text-gray-400">Contexto</p>
+              <p className="text-sm text-gray-200 whitespace-pre-line">{node.context}</p>
             </div>
           </div>
         )}
 
         {node.description && (
           <div className="flex items-start gap-2">
-            <FileText className="h-4 w-4 mt-0.5 text-gray-400" />
+            <FileText className="h-4 w-4 mt-0.5 text-gray-500" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Descricao</p>
-              <p className="text-sm text-gray-600">{node.description}</p>
+              <p className="text-sm font-medium text-gray-400">Descricao</p>
+              <p className="text-sm text-gray-200">{node.description}</p>
             </div>
           </div>
         )}
 
         {node.tags && node.tags.length > 0 && (
           <div className="flex items-start gap-2">
-            <Tag className="h-4 w-4 mt-0.5 text-gray-400" />
+            <Tag className="h-4 w-4 mt-0.5 text-gray-500" />
             <div>
-              <p className="text-sm font-medium text-gray-700">Tags</p>
+              <p className="text-sm font-medium text-gray-400">Tags</p>
               <div className="mt-1 flex flex-wrap gap-1">
                 {node.tags.map((tag) => (
                   <span
                     key={tag.id}
                     className="inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium"
                     style={{
-                      backgroundColor: tag.color ? `${tag.color}20` : '#E5E7EB',
-                      color: tag.color || '#374151',
+                      backgroundColor: tag.color ? `${tag.color}30` : 'rgba(255,255,255,0.1)',
+                      color: tag.color || '#9ca3af',
                     }}
                   >
                     {tag.name}
@@ -141,12 +145,12 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
         )}
 
         {node.isShared && node.sharedByUsers && node.sharedByUsers.length > 0 && (
-          <div className="mt-4 rounded-lg bg-amber-50 border border-amber-200 p-3">
+          <div className="mt-4 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
             <div className="flex items-center gap-2 mb-2">
-              <Users className="h-4 w-4 text-amber-600" />
-              <p className="text-sm font-semibold text-amber-800">Contato em Comum</p>
+              <Users className="h-4 w-4 text-amber-400" />
+              <p className="text-sm font-semibold text-amber-300">Contato em Comum</p>
             </div>
-            <p className="text-sm text-amber-700">
+            <p className="text-sm text-amber-200">
               {node.sharedByUsers.map((u) => u.name).join(', ')}{' '}
               {node.sharedByUsers.length === 1 ? 'também conhece' : 'também conhecem'} este contato
             </p>
@@ -154,16 +158,16 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
         )}
 
         {node.type === 'user' && node.degree === 0 && (
-          <div className="mt-6 rounded-lg bg-green-50 p-3">
-            <p className="text-sm text-green-800">
+          <div className="mt-6 rounded-lg bg-green-500/10 border border-green-500/20 p-3">
+            <p className="text-sm text-green-300">
               Este e voce! O centro da sua rede de conexoes.
             </p>
           </div>
         )}
 
         {node.type === 'mentioned' && (
-          <div className="mt-6 rounded-lg bg-gray-50 p-3">
-            <p className="text-sm text-gray-700">
+          <div className="mt-6 rounded-lg bg-white/5 border border-white/10 p-3">
+            <p className="text-sm text-gray-300">
               Esta pessoa foi mencionada por um dos seus contatos diretos.
             </p>
           </div>
