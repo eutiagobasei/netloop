@@ -79,11 +79,36 @@ services:
     networks:
       - netloop-network
 
+  web:
+    build:
+      context: ./web
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    image: netloop-prod-web:latest
+    container_name: netloop-prod-web
+    restart: always
+    ports:
+      - "3005:3005"
+    environment:
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
+    depends_on:
+      - backend
+    networks:
+      - netloop-network
+
 volumes:
   postgres_data:
     name: netloop-prod_postgres_data
+    labels:
+      com.netloop.protect: "true"
+      com.netloop.backup: "required"
+      com.netloop.description: "Production PostgreSQL data - DO NOT DELETE"
   redis_data:
     name: netloop-prod_redis_data
+    labels:
+      com.netloop.protect: "true"
+      com.netloop.description: "Production Redis data"
 
 networks:
   netloop-network:
