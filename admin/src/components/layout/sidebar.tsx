@@ -16,6 +16,7 @@ import {
   Brain,
   Building2,
   Sparkles,
+  Tag,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
@@ -34,6 +35,7 @@ const adminNavigation = [
 const userNavigation = [
   { name: 'Minha Rede', href: '/network', icon: Network },
   { name: 'Loop', href: '/loop', icon: Sparkles },
+  { name: 'Tags', href: '/settings/tags', icon: Tag },
 ]
 
 const environments = [
