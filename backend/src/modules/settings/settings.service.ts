@@ -148,9 +148,12 @@ export class SettingsService {
 
         // Lista todas as instâncias disponíveis (suporta ambos formatos de resposta)
         const availableInstances = Array.isArray(data)
-          ? data.map((i: { name?: string; instance?: { instanceName?: string } }) =>
-              i?.name || i?.instance?.instanceName
-            ).filter(Boolean)
+          ? data
+              .map(
+                (i: { name?: string; instance?: { instanceName?: string } }) =>
+                  i?.name || i?.instance?.instanceName,
+              )
+              .filter(Boolean)
           : [];
 
         if (availableInstances.length === 0) {
@@ -161,9 +164,11 @@ export class SettingsService {
         }
 
         const instance = instanceName
-          ? data.find((i: { name?: string; instance?: { instanceName?: string } }) =>
-              (i.name?.toLowerCase() === instanceName.toLowerCase()) ||
-              (i.instance?.instanceName?.toLowerCase() === instanceName.toLowerCase()))
+          ? data.find(
+              (i: { name?: string; instance?: { instanceName?: string } }) =>
+                i.name?.toLowerCase() === instanceName.toLowerCase() ||
+                i.instance?.instanceName?.toLowerCase() === instanceName.toLowerCase(),
+            )
           : data[0];
 
         if (instance) {

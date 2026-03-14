@@ -1,5 +1,13 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsBoolean, Matches, MaxLength, MinLength, IsEnum } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsBoolean,
+  Matches,
+  MaxLength,
+  MinLength,
+  IsEnum,
+} from 'class-validator';
 import { MembersVisibility } from '@prisma/client';
 
 export class UpdateGroupDto {
@@ -32,7 +40,11 @@ export class UpdateGroupDto {
   @IsBoolean()
   isActive?: boolean;
 
-  @ApiProperty({ enum: MembersVisibility, required: false, description: 'Visibilidade entre membros (v2)' })
+  @ApiProperty({
+    enum: MembersVisibility,
+    required: false,
+    description: 'Visibilidade entre membros (v2)',
+  })
   @IsOptional()
   @IsEnum(MembersVisibility)
   membersVisibility?: MembersVisibility;

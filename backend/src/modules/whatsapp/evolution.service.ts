@@ -54,7 +54,7 @@ export class EvolutionService {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'apikey': apiKey,
+          apikey: apiKey,
         },
         body: JSON.stringify({
           number: formattedNumber,
@@ -149,7 +149,10 @@ export class EvolutionService {
    * Baixa mídia (áudio/imagem/vídeo) usando a Evolution API
    * Retorna o buffer do arquivo descriptografado
    */
-  async downloadMedia(messageKey: any, messageType: 'audio' | 'image' | 'video' | 'document' = 'audio'): Promise<Buffer | null> {
+  async downloadMedia(
+    messageKey: any,
+    messageType: 'audio' | 'image' | 'video' | 'document' = 'audio',
+  ): Promise<Buffer | null> {
     try {
       const { apiUrl, apiKey, instanceName } = await this.getCredentials();
       if (!apiUrl || !apiKey || !instanceName) {
@@ -181,7 +184,9 @@ export class EvolutionService {
 
       const data = await response.json();
 
-      this.logger.log(`Resposta Evolution downloadMedia: ${JSON.stringify(data).substring(0, 200)}`);
+      this.logger.log(
+        `Resposta Evolution downloadMedia: ${JSON.stringify(data).substring(0, 200)}`,
+      );
 
       // A Evolution pode retornar base64 diretamente ou dentro de um objeto
       const base64Content = data.base64 || data.data?.base64 || data.mediaMessage?.base64;
@@ -194,7 +199,9 @@ export class EvolutionService {
         return buffer;
       }
 
-      this.logger.error(`Resposta da Evolution não contém base64. Keys: ${Object.keys(data).join(', ')}`);
+      this.logger.error(
+        `Resposta da Evolution não contém base64. Keys: ${Object.keys(data).join(', ')}`,
+      );
       return null;
     } catch (error) {
       this.logger.error('Erro ao baixar mídia:', error);
@@ -205,11 +212,7 @@ export class EvolutionService {
   /**
    * Envia mensagem de vídeo
    */
-  async sendVideoMessage(
-    toPhone: string,
-    videoPath: string,
-    caption?: string,
-  ): Promise<boolean> {
+  async sendVideoMessage(toPhone: string, videoPath: string, caption?: string): Promise<boolean> {
     try {
       const { apiUrl, apiKey, instanceName } = await this.getCredentials();
       if (!apiUrl || !apiKey || !instanceName) {

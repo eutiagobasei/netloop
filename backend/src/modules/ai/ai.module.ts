@@ -10,10 +10,7 @@ import { SettingsModule } from '../settings/settings.module';
 import { ContactsModule } from '../contacts/contacts.module';
 
 @Module({
-  imports: [
-    SettingsModule,
-    forwardRef(() => ContactsModule),
-  ],
+  imports: [SettingsModule, forwardRef(() => ContactsModule)],
   controllers: [AIController],
   providers: [
     AIService,

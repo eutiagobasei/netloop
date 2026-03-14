@@ -45,8 +45,18 @@ export class ConnectionsController {
 
   @Get('search')
   @ApiOperation({ summary: 'Busca semântica de conexões' })
-  @ApiQuery({ name: 'q', required: true, type: String, description: 'Termo de busca (ex: "quem conheci no evento SOMA")' })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Limite de resultados (padrão: 10)' })
+  @ApiQuery({
+    name: 'q',
+    required: true,
+    type: String,
+    description: 'Termo de busca (ex: "quem conheci no evento SOMA")',
+  })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Limite de resultados (padrão: 10)',
+  })
   @ApiResponse({ status: 200, description: 'Conexões encontradas por similaridade semântica' })
   async searchConnections(
     @CurrentUser('id') userId: string,
@@ -58,9 +68,17 @@ export class ConnectionsController {
 
   @Get('graph')
   @ApiOperation({ summary: 'Obter dados do grafo de conexões' })
-  @ApiQuery({ name: 'depth', required: false, type: Number, description: 'Profundidade do grafo (1 ou 2)' })
+  @ApiQuery({
+    name: 'depth',
+    required: false,
+    type: Number,
+    description: 'Profundidade do grafo (1 ou 2)',
+  })
   @ApiResponse({ status: 200, description: 'Dados do grafo para visualização' })
-  async getGraph(@CurrentUser('id') userId: string, @Query('depth') depth?: number): Promise<GraphData> {
+  async getGraph(
+    @CurrentUser('id') userId: string,
+    @Query('depth') depth?: number,
+  ): Promise<GraphData> {
     return this.connectionsService.getGraph(userId, depth || 2);
   }
 

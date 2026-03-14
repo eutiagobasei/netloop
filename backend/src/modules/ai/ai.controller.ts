@@ -1,12 +1,12 @@
+import { Controller, Get, Post, Body, Query, UseGuards } from '@nestjs/common';
 import {
-  Controller,
-  Get,
-  Post,
-  Body,
-  Query,
-  UseGuards,
-} from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery, ApiBody } from '@nestjs/swagger';
+  ApiTags,
+  ApiOperation,
+  ApiResponse,
+  ApiBearerAuth,
+  ApiQuery,
+  ApiBody,
+} from '@nestjs/swagger';
 import { AIService } from './ai.service';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
@@ -58,11 +58,7 @@ export class AIController {
     @Query('q') query: string,
     @Query('limit') limit?: number,
   ) {
-    const results = await this.aiService.searchSimilarContacts(
-      query,
-      userId,
-      limit || 10,
-    );
+    const results = await this.aiService.searchSimilarContacts(query, userId, limit || 10);
     return { results };
   }
 

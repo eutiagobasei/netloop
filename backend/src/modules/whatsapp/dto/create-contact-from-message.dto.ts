@@ -1,12 +1,24 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsString, IsOptional, IsEmail, IsArray, IsUUID, IsNotEmpty, Matches } from 'class-validator';
+import {
+  IsString,
+  IsOptional,
+  IsEmail,
+  IsArray,
+  IsUUID,
+  IsNotEmpty,
+  Matches,
+} from 'class-validator';
 
 export class CreateContactFromMessageDto {
   @ApiProperty({ example: 'Maria Santos' })
   @IsString()
   name: string;
 
-  @ApiProperty({ example: '5511988888888', required: true, description: 'Telefone obrigatório. Formato: 5511988888888 (código país + DDD + número)' })
+  @ApiProperty({
+    example: '5511988888888',
+    required: true,
+    description: 'Telefone obrigatório. Formato: 5511988888888 (código país + DDD + número)',
+  })
   @IsString()
   @IsNotEmpty({ message: 'Telefone é obrigatório' })
   @Matches(/^(\+?55)?[1-9]{2}9?[0-9]{8}$/, {

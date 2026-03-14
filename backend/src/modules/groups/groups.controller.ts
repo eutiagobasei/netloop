@@ -38,10 +38,7 @@ export class GroupsController {
   @ApiResponse({ status: 201, description: 'Grupo criado com sucesso' })
   @ApiResponse({ status: 403, description: 'Acesso negado - apenas Super Admin' })
   @ApiResponse({ status: 409, description: 'Já existe um grupo com esse nome' })
-  async create(
-    @CurrentUser('id') userId: string,
-    @Body() dto: CreateGroupDto,
-  ) {
+  async create(@CurrentUser('id') userId: string, @Body() dto: CreateGroupDto) {
     return this.groupsService.create(userId, dto);
   }
 
@@ -57,10 +54,7 @@ export class GroupsController {
   @ApiResponse({ status: 200, description: 'Grupo encontrado' })
   @ApiResponse({ status: 403, description: 'Acesso negado - não é membro' })
   @ApiResponse({ status: 404, description: 'Grupo não encontrado' })
-  async findById(
-    @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) id: string,
-  ) {
+  async findById(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) id: string) {
     return this.groupsService.findById(id, userId);
   }
 
@@ -105,10 +99,7 @@ export class GroupsController {
   @ApiOperation({ summary: 'Listar membros do grupo (apenas membros)' })
   @ApiResponse({ status: 200, description: 'Lista de membros' })
   @ApiResponse({ status: 403, description: 'Acesso negado - não é membro' })
-  async getMembers(
-    @CurrentUser('id') userId: string,
-    @Param('id', ParseUUIDPipe) groupId: string,
-  ) {
+  async getMembers(@CurrentUser('id') userId: string, @Param('id', ParseUUIDPipe) groupId: string) {
     return this.groupsService.getMembers(groupId, userId);
   }
 

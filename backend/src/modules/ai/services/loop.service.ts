@@ -10,7 +10,14 @@ import {
   LoopActionItem,
   LoopGap,
 } from '../dto/loop.dto';
-import { ConnectionStrength, Connection, Contact, ContactTag, Tag, MentionedConnection } from '@prisma/client';
+import {
+  ConnectionStrength,
+  Connection,
+  Contact,
+  ContactTag,
+  Tag,
+  MentionedConnection,
+} from '@prisma/client';
 
 /**
  * Maximum contacts to include in AI analysis.
@@ -141,8 +148,7 @@ export class LoopService {
     };
 
     return [...connections].sort((a, b) => {
-      const strengthDiff = (strengthOrder[b.strength] || 0) -
-                          (strengthOrder[a.strength] || 0);
+      const strengthDiff = (strengthOrder[b.strength] || 0) - (strengthOrder[a.strength] || 0);
       if (strengthDiff !== 0) return strengthDiff;
       return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
     });
@@ -208,7 +214,8 @@ export class LoopService {
         gaps: [
           {
             need: 'Rede de contatos',
-            description: 'Você ainda não possui contatos cadastrados. Adicione contatos à sua rede para que o Loop possa criar um plano de ação estratégico.',
+            description:
+              'Você ainda não possui contatos cadastrados. Adicione contatos à sua rede para que o Loop possa criar um plano de ação estratégico.',
           },
         ],
         generatedAt: new Date().toISOString(),
@@ -258,26 +265,35 @@ export class LoopService {
    */
   private preparePrompt(prompt: string, networkData: LoopNetworkData, goal: string): string {
     // Formata os contatos de 1º grau
-    const firstDegreeContacts = networkData.contacts.filter(c => c.level === 1);
-    const secondDegreeContacts = networkData.contacts.filter(c => c.level === 2);
+    const firstDegreeContacts = networkData.contacts.filter((c) => c.level === 1);
+    const secondDegreeContacts = networkData.contacts.filter((c) => c.level === 2);
 
-    const contactsJson = JSON.stringify(firstDegreeContacts.map(c => ({
-      id: c.id,
-      name: c.name,
-      profession: c.profession,
-      skills: c.skills,
-      company: c.company,
-      interaction_notes: c.interaction_notes,
-    })), null, 2);
+    const contactsJson = JSON.stringify(
+      firstDegreeContacts.map((c) => ({
+        id: c.id,
+        name: c.name,
+        profession: c.profession,
+        skills: c.skills,
+        company: c.company,
+        interaction_notes: c.interaction_notes,
+      })),
+      null,
+      2,
+    );
 
-    const secondDegreeJson = secondDegreeContacts.length > 0
-      ? JSON.stringify(secondDegreeContacts.map(c => ({
-          id: c.id,
-          name: c.name,
-          profession: c.profession,
-          connected_through: c.connected_through,
-        })), null, 2)
-      : '[]';
+    const secondDegreeJson =
+      secondDegreeContacts.length > 0
+        ? JSON.stringify(
+            secondDegreeContacts.map((c) => ({
+              id: c.id,
+              name: c.name,
+              profession: c.profession,
+              connected_through: c.connected_through,
+            })),
+            null,
+            2,
+          )
+        : '[]';
 
     return prompt
       .replace(/\{\{userProfile\}\}/g, JSON.stringify(networkData.userProfile))
@@ -291,7 +307,10 @@ export class LoopService {
   /**
    * Faz parse da resposta da IA e valida a estrutura
    */
-  private parseLoopResponse(content: string, goal: string): Omit<LoopPlanResponse, 'generatedAt' | 'contactsAnalyzed' | 'totalContacts'> {
+  private parseLoopResponse(
+    content: string,
+    goal: string,
+  ): Omit<LoopPlanResponse, 'generatedAt' | 'contactsAnalyzed' | 'totalContacts'> {
     try {
       const parsed = JSON.parse(content);
 

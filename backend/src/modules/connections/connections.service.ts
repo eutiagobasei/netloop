@@ -113,12 +113,11 @@ export class ConnectionsService {
         });
       } else {
         // Se contexto foi removido, limpa o embedding
-        this.prisma.$executeRawUnsafe(
-          `UPDATE connections SET embedding = NULL WHERE id = $1`,
-          id,
-        ).catch((err) => {
-          this.logger.error(`Erro ao limpar embedding da conexão ${id}: ${err.message}`);
-        });
+        this.prisma
+          .$executeRawUnsafe(`UPDATE connections SET embedding = NULL WHERE id = $1`, id)
+          .catch((err) => {
+            this.logger.error(`Erro ao limpar embedding da conexão ${id}: ${err.message}`);
+          });
       }
     }
 
@@ -196,7 +195,9 @@ export class ConnectionsService {
         phoneToUserMap.set(variation, u.id);
       }
     }
-    this.logger.log(`Phone map size: ${phoneToUserMap.size}, keys: ${Array.from(phoneToUserMap.keys()).join(', ')}`);
+    this.logger.log(
+      `Phone map size: ${phoneToUserMap.size}, keys: ${Array.from(phoneToUserMap.keys()).join(', ')}`,
+    );
 
     // === Shared contacts lookup ===
     // Collect all phones from first degree contacts and expand with variations
@@ -214,18 +215,19 @@ export class ConnectionsService {
     }
 
     // Query contacts from OTHER users with matching phones
-    const sharedContacts = allPhoneVariations.length > 0
-      ? await this.prisma.contact.findMany({
-          where: {
-            ownerId: { not: userId },
-            phone: { in: allPhoneVariations },
-          },
-          select: {
-            phone: true,
-            owner: { select: { id: true, name: true } },
-          },
-        })
-      : [];
+    const sharedContacts =
+      allPhoneVariations.length > 0
+        ? await this.prisma.contact.findMany({
+            where: {
+              ownerId: { not: userId },
+              phone: { in: allPhoneVariations },
+            },
+            select: {
+              phone: true,
+              owner: { select: { id: true, name: true } },
+            },
+          })
+        : [];
 
     // Build map: normalizedPhone -> { users[] }
     const sharedMap = new Map<string, { id: string; name: string }[]>();
@@ -242,7 +244,13 @@ export class ConnectionsService {
     }
 
     // Helper to find shared users for a contact
-    const getSharedInfo = (contactId: string): { isShared: boolean; sharedByCount: number; sharedByUsers: { id: string; name: string }[] } => {
+    const getSharedInfo = (
+      contactId: string,
+    ): {
+      isShared: boolean;
+      sharedByCount: number;
+      sharedByUsers: { id: string; name: string }[];
+    } => {
       const variations = contactPhoneMap.get(contactId) || [];
       const usersSet = new Map<string, { id: string; name: string }>();
       for (const v of variations) {
@@ -296,12 +304,16 @@ export class ConnectionsService {
         if (depth >= 2) {
           // 1. Verifica se o contato tem telefone que corresponde a um usuário
           const contactPhoneVariations = this.normalizePhoneVariations(conn.contact.phone);
-          this.logger.log(`Contact ${conn.contact.name} phone: ${conn.contact.phone} -> variations: ${JSON.stringify(contactPhoneVariations)}`);
+          this.logger.log(
+            `Contact ${conn.contact.name} phone: ${conn.contact.phone} -> variations: ${JSON.stringify(contactPhoneVariations)}`,
+          );
           let linkedUserId: string | null = null;
 
           // Procura match em qualquer variação do telefone
           for (const variation of contactPhoneVariations) {
-            this.logger.log(`Checking variation ${variation}, exists in map: ${phoneToUserMap.has(variation)}`);
+            this.logger.log(
+              `Checking variation ${variation}, exists in map: ${phoneToUserMap.has(variation)}`,
+            );
             if (phoneToUserMap.has(variation)) {
               linkedUserId = phoneToUserMap.get(variation)!;
               this.logger.log(`MATCH! Contact linked to user ${linkedUserId}`);
@@ -424,9 +436,15 @@ export class ConnectionsService {
     for (const conn of firstDegreeContacts) {
       if (conn.contact.phone) {
         const variations = PhoneUtil.getVariations(conn.contact.phone);
-        this.logger.log(`[2º grau] Contato ${conn.contact.name}: ${conn.contact.phone} → variações: ${variations.join(', ')}`);
+        this.logger.log(
+          `[2º grau] Contato ${conn.contact.name}: ${conn.contact.phone} → variações: ${variations.join(', ')}`,
+        );
         for (const v of variations) {
-          phoneToFirstDegree.set(v, { id: conn.contact.id, name: conn.contact.name, phone: conn.contact.phone });
+          phoneToFirstDegree.set(v, {
+            id: conn.contact.id,
+            name: conn.contact.name,
+            phone: conn.contact.phone,
+          });
           allPhoneVariations.push(v);
         }
       }
@@ -441,10 +459,14 @@ export class ConnectionsService {
       select: { id: true, name: true, phone: true },
     });
 
-    this.logger.log(`[2º grau] Usuários conectados encontrados: ${connectedUsers.length} - ${connectedUsers.map(u => `${u.name}(${u.phone})`).join(', ')}`);
+    this.logger.log(
+      `[2º grau] Usuários conectados encontrados: ${connectedUsers.length} - ${connectedUsers.map((u) => `${u.name}(${u.phone})`).join(', ')}`,
+    );
 
     if (connectedUsers.length === 0) {
-      this.logger.log(`[2º grau] Nenhum usuário conectado encontrado com os telefones: ${allPhoneVariations.slice(0, 5).join(', ')}...`);
+      this.logger.log(
+        `[2º grau] Nenhum usuário conectado encontrado com os telefones: ${allPhoneVariations.slice(0, 5).join(', ')}...`,
+      );
       return [];
     }
 
@@ -452,11 +474,14 @@ export class ConnectionsService {
 
     // Busca contatos de 2º grau que matcham a busca (por área/profissão)
     // Divide a busca em palavras para encontrar matches parciais
-    const searchWords = search.toLowerCase().split(/\s+/).filter(w => w.length > 2);
+    const searchWords = search
+      .toLowerCase()
+      .split(/\s+/)
+      .filter((w) => w.length > 2);
     this.logger.log(`[2º grau] Palavras de busca: ${searchWords.join(', ')}`);
 
     // Cria condições OR para cada palavra em cada campo
-    const searchConditions = searchWords.flatMap(word => [
+    const searchConditions = searchWords.flatMap((word) => [
       { position: { contains: word, mode: 'insensitive' as const } },
       { company: { contains: word, mode: 'insensitive' as const } },
       { notes: { contains: word, mode: 'insensitive' as const } },
@@ -465,11 +490,14 @@ export class ConnectionsService {
     const secondDegreeContacts = await this.prisma.contact.findMany({
       where: {
         ownerId: { in: connectedUserIds },
-        OR: searchConditions.length > 0 ? searchConditions : [
-          { position: { contains: search, mode: 'insensitive' as const } },
-          { company: { contains: search, mode: 'insensitive' as const } },
-          { notes: { contains: search, mode: 'insensitive' as const } },
-        ],
+        OR:
+          searchConditions.length > 0
+            ? searchConditions
+            : [
+                { position: { contains: search, mode: 'insensitive' as const } },
+                { company: { contains: search, mode: 'insensitive' as const } },
+                { notes: { contains: search, mode: 'insensitive' as const } },
+              ],
       },
       select: {
         id: true,
@@ -500,7 +528,9 @@ export class ConnectionsService {
       // Usa o telefone do USUÁRIO (ownerPhone) pois é o número cadastrado no WhatsApp
       // O telefone do contato pode ter formato diferente (ex: com 9º dígito)
       const connectorPhone = ownerPhone;
-      this.logger.log(`[2º grau] Retornando connector: name=${connector?.name}, ownerPhone=${ownerPhone}`);
+      this.logger.log(
+        `[2º grau] Retornando connector: name=${connector?.name}, ownerPhone=${ownerPhone}`,
+      );
 
       return {
         id: c.id,

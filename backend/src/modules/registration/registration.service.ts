@@ -102,17 +102,16 @@ export class RegistrationService {
       }
     }
 
-    this.logger.log(`Processando resposta conversacional: phone=${phone}, attempts=${flow.attemptsCount}`);
+    this.logger.log(
+      `Processando resposta conversacional: phone=${phone}, attempts=${flow.attemptsCount}`,
+    );
 
     // Recupera histórico e dados extraídos
     const history = (flow.conversationHistory as unknown as ConversationMessage[]) || [];
     const extractedData = (flow.extractedData as unknown as ExtractedRegistrationData) || {};
 
     // Adiciona mensagem do usuário ao histórico
-    const updatedHistory: ConversationMessage[] = [
-      ...history,
-      { role: 'user', content: message },
-    ];
+    const updatedHistory: ConversationMessage[] = [...history, { role: 'user', content: message }];
 
     // Formata telefone para exibição
     const phoneFormatted = PhoneUtil.format(phone);
@@ -122,12 +121,12 @@ export class RegistrationService {
     const needsPhoneFallback =
       extractedData.name &&
       !extractedData.phoneConfirmed &&
-      flow.attemptsCount >= (MAX_ATTEMPTS_FOR_NAME + 2);
+      flow.attemptsCount >= MAX_ATTEMPTS_FOR_NAME + 2;
     const needsEmailFallback =
       extractedData.name &&
       extractedData.phoneConfirmed &&
       !extractedData.email &&
-      flow.attemptsCount >= (MAX_ATTEMPTS_FOR_NAME + MAX_ATTEMPTS_FOR_EMAIL + 2);
+      flow.attemptsCount >= MAX_ATTEMPTS_FOR_NAME + MAX_ATTEMPTS_FOR_EMAIL + 2;
 
     let response: string;
     let newExtractedData: ExtractedRegistrationData;
@@ -167,20 +166,28 @@ export class RegistrationService {
     }
 
     // Se registro está completo, cria o usuário
-    if (isComplete && newExtractedData.name && newExtractedData.phoneConfirmed && newExtractedData.email) {
+    if (
+      isComplete &&
+      newExtractedData.name &&
+      newExtractedData.phoneConfirmed &&
+      newExtractedData.email
+    ) {
       // Normaliza telefone antes de salvar
       const normalizedPhone = PhoneUtil.normalize(phone) || phone.replace(/\D/g, '');
-      return this.completeRegistration(flow.id, normalizedPhone, newExtractedData, response, updatedHistory);
+      return this.completeRegistration(
+        flow.id,
+        normalizedPhone,
+        newExtractedData,
+        response,
+        updatedHistory,
+      );
     }
 
     // Atualiza o fluxo com novo histórico e dados
     await this.prisma.userRegistrationFlow.update({
       where: { id: flow.id },
       data: {
-        conversationHistory: [
-          ...updatedHistory,
-          { role: 'assistant', content: response },
-        ] as any,
+        conversationHistory: [...updatedHistory, { role: 'assistant', content: response }] as any,
         extractedData: newExtractedData as any,
         attemptsCount: flow.attemptsCount + 1,
         lastMessageAt: new Date(),
@@ -224,10 +231,7 @@ Caso contrário, me passa outro email?`;
       await this.prisma.userRegistrationFlow.update({
         where: { id: flowId },
         data: {
-          conversationHistory: [
-            ...history,
-            { role: 'assistant', content: errorMsg },
-          ],
+          conversationHistory: [...history, { role: 'assistant', content: errorMsg }],
           extractedData: { name }, // Mantém nome, limpa email
           lastMessageAt: new Date(),
         },
@@ -259,10 +263,7 @@ Caso contrário, me passa outro email?`;
         name,
         email: trimmedEmail,
         step: 'COMPLETED',
-        conversationHistory: [
-          ...history,
-          { role: 'assistant', content: aiResponse },
-        ],
+        conversationHistory: [...history, { role: 'assistant', content: aiResponse }],
         lastMessageAt: new Date(),
       },
     });

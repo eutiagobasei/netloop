@@ -4,10 +4,7 @@ import { TranscriptionService } from './services/transcription.service';
 import { ExtractionService, MessageIntent } from './services/extraction.service';
 import { EmbeddingService } from './services/embedding.service';
 import { LoopService } from './services/loop.service';
-import {
-  ExtractedContactData,
-  ExtractionResult,
-} from './dto/extracted-contact.dto';
+import { ExtractedContactData, ExtractionResult } from './dto/extracted-contact.dto';
 import { LoopPlanResponse } from './dto/loop.dto';
 
 @Injectable()
@@ -124,7 +121,7 @@ export class AIService {
   async classifyIntroResponse(
     userMessage: string,
     connectorName: string,
-    area: string
+    area: string,
   ): Promise<'confirm' | 'reject' | 'other'> {
     return this.extractionService.classifyIntroResponse(userMessage, connectorName, area);
   }

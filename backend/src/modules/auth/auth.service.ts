@@ -1,4 +1,10 @@
-import { Injectable, UnauthorizedException, ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcrypt';
@@ -74,11 +80,7 @@ export class AuthService {
       where: { id: storedToken.id },
     });
 
-    return this.generateTokens(
-      storedToken.user.id,
-      storedToken.user.email,
-      storedToken.user.role,
-    );
+    return this.generateTokens(storedToken.user.id, storedToken.user.email, storedToken.user.role);
   }
 
   async logout(userId: string, refreshToken?: string): Promise<void> {
@@ -170,11 +172,7 @@ export class AuthService {
     };
   }
 
-  private async generateTokens(
-    userId: string,
-    email: string,
-    role: string,
-  ): Promise<TokensDto> {
+  private async generateTokens(userId: string, email: string, role: string): Promise<TokensDto> {
     const payload = { sub: userId, email, role };
 
     const accessToken = this.jwtService.sign(payload);

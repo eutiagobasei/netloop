@@ -30,10 +30,7 @@ export class WhatsappController {
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Webhook para receber mensagens do WhatsApp (Evolution API)' })
   @ApiResponse({ status: 200, description: 'Mensagem recebida' })
-  async handleWebhook(
-    @Body() payload: any,
-    @Headers('x-webhook-signature') signature?: string,
-  ) {
+  async handleWebhook(@Body() payload: any, @Headers('x-webhook-signature') signature?: string) {
     this.logger.log(`Webhook recebido: ${payload?.event || 'unknown event'}`);
     this.logger.log(`Payload keys: ${Object.keys(payload || {}).join(', ')}`);
 

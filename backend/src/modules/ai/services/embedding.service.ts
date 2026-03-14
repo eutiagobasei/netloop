@@ -61,11 +61,7 @@ export class EmbeddingService {
     this.logger.log(`Embedding atualizado para contato ${contactId}`);
   }
 
-  async searchSimilarContacts(
-    query: string,
-    userId: string,
-    limit = 10,
-  ): Promise<any[]> {
+  async searchSimilarContacts(query: string, userId: string, limit = 10): Promise<any[]> {
     this.logger.log(`Busca semântica: "${query}" para usuário ${userId}`);
 
     const embedding = await this.generateEmbedding(query);
@@ -129,11 +125,7 @@ export class EmbeddingService {
     this.logger.log(`Embedding atualizado para conexão ${connectionId}`);
   }
 
-  async searchSimilarConnections(
-    query: string,
-    userId: string,
-    limit = 10,
-  ): Promise<any[]> {
+  async searchSimilarConnections(query: string, userId: string, limit = 10): Promise<any[]> {
     this.logger.log(`Busca semântica de conexões: "${query}" para usuário ${userId}`);
 
     const embedding = await this.generateEmbedding(query);
@@ -171,13 +163,19 @@ export class EmbeddingService {
     return results;
   }
 
-  async backfillConnectionEmbeddings(userId?: string): Promise<{ processed: number; skipped: number }> {
-    this.logger.log(`Iniciando backfill de embeddings de conexões${userId ? ` para usuário ${userId}` : ''}`);
+  async backfillConnectionEmbeddings(
+    userId?: string,
+  ): Promise<{ processed: number; skipped: number }> {
+    this.logger.log(
+      `Iniciando backfill de embeddings de conexões${userId ? ` para usuário ${userId}` : ''}`,
+    );
 
     const whereClause = userId ? `AND conn.from_user_id = '${userId}'` : '';
 
     // Busca conexões com contexto mas sem embedding
-    const connections = await this.prisma.$queryRawUnsafe<{ id: string; context: string; contactName: string }[]>(
+    const connections = await this.prisma.$queryRawUnsafe<
+      { id: string; context: string; contactName: string }[]
+    >(
       `
       SELECT conn.id, conn.context, c.name as "contactName"
       FROM connections conn
@@ -203,7 +201,9 @@ export class EmbeddingService {
         );
 
         processed++;
-        this.logger.log(`Embedding gerado para conexão ${conn.id} (${processed}/${connections.length})`);
+        this.logger.log(
+          `Embedding gerado para conexão ${conn.id} (${processed}/${connections.length})`,
+        );
       } catch (error) {
         skipped++;
         this.logger.error(`Erro ao gerar embedding para conexão ${conn.id}: ${error.message}`);

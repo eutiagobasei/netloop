@@ -237,9 +237,7 @@ export class TagsService {
       skipDuplicates: true,
     });
 
-    this.logger.log(
-      `Tag ${tagId} aplicada em ${result.count} contatos do usuário ${userId}`,
-    );
+    this.logger.log(`Tag ${tagId} aplicada em ${result.count} contatos do usuário ${userId}`);
 
     return result.count;
   }
@@ -269,9 +267,7 @@ export class TagsService {
       },
     });
 
-    this.logger.log(
-      `Tag ${tagId} removida de ${result.count} contatos do usuário ${userId}`,
-    );
+    this.logger.log(`Tag ${tagId} removida de ${result.count} contatos do usuário ${userId}`);
 
     return result.count;
   }

@@ -1,4 +1,13 @@
-import { Controller, Post, Get, Body, UseGuards, HttpCode, HttpStatus, Param } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Get,
+  Body,
+  UseGuards,
+  HttpCode,
+  HttpStatus,
+  Param,
+} from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { RegisterDto } from './dto/register.dto';
@@ -74,10 +83,7 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Token de impersonação gerado com sucesso' })
   @ApiResponse({ status: 403, description: 'Sem permissão para impersonar' })
   @ApiResponse({ status: 404, description: 'Usuário não encontrado' })
-  async impersonate(
-    @CurrentUser('id') adminId: string,
-    @Param('userId') targetUserId: string,
-  ) {
+  async impersonate(@CurrentUser('id') adminId: string, @Param('userId') targetUserId: string) {
     return this.authService.impersonate(adminId, targetUserId);
   }
 }

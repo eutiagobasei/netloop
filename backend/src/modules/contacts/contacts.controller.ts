@@ -11,13 +11,7 @@ import {
   Inject,
   forwardRef,
 } from '@nestjs/common';
-import {
-  ApiTags,
-  ApiOperation,
-  ApiResponse,
-  ApiBearerAuth,
-  ApiQuery,
-} from '@nestjs/swagger';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { ContactsService } from './contacts.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
@@ -47,14 +41,12 @@ export class ContactsController {
   @Post('extract')
   @ApiOperation({
     summary: 'Extrair dados de texto e criar/atualizar contato',
-    description: 'Recebe texto livre, extrai informações de contato via IA e salva (com merge se existir)',
+    description:
+      'Recebe texto livre, extrai informações de contato via IA e salva (com merge se existir)',
   })
   @ApiResponse({ status: 201, description: 'Contato criado/atualizado com sucesso' })
   @ApiResponse({ status: 400, description: 'Texto inválido ou extração falhou' })
-  async extractAndSave(
-    @CurrentUser('id') userId: string,
-    @Body() dto: ExtractTextDto,
-  ) {
+  async extractAndSave(@CurrentUser('id') userId: string, @Body() dto: ExtractTextDto) {
     const extraction = await this.aiService.extractContactData(dto.text);
 
     if (!extraction.success) {
@@ -74,10 +66,7 @@ export class ContactsController {
     status: 200,
     description: 'Resultado da busca com tipo (direto/ponte/nenhum) e mensagem formatada',
   })
-  async search(
-    @CurrentUser('id') userId: string,
-    @Query('q') query: string,
-  ) {
+  async search(@CurrentUser('id') userId: string, @Query('q') query: string) {
     if (!query || query.trim().length < 2) {
       return { type: 'nenhum', data: [], message: 'Digite ao menos 2 caracteres para buscar.' };
     }

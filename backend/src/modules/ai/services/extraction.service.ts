@@ -1,13 +1,15 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenAIService } from './openai.service';
 import { SettingsService } from '../../settings/settings.service';
-import {
-  ExtractedContactData,
-  ExtractionResult,
-} from '../dto/extracted-contact.dto';
+import { ExtractedContactData, ExtractionResult } from '../dto/extracted-contact.dto';
 import { DEFAULT_PROMPTS, AI_CONFIG, PromptKey } from '../constants/default-prompts';
 
-export type MessageIntent = 'query' | 'contact_info' | 'update_contact' | 'register_intent' | 'other';
+export type MessageIntent =
+  | 'query'
+  | 'contact_info'
+  | 'update_contact'
+  | 'register_intent'
+  | 'other';
 
 export interface RegistrationResponseParams {
   userMessage: string;
@@ -47,21 +49,63 @@ export class ExtractionService {
    * Lista de saudações comuns que devem ser ignoradas
    */
   private readonly GREETINGS = [
-    'oi', 'olá', 'ola', 'opa', 'e aí', 'eai', 'e ai', 'hey', 'hi', 'hello',
-    'bom dia', 'boa tarde', 'boa noite', 'tudo bem', 'tudo bom', 'como vai',
-    'fala', 'salve', 'eae', 'oie', 'oii', 'oiii', 'olar', 'hola',
-    'obrigado', 'obrigada', 'valeu', 'vlw', 'thanks', 'brigado', 'brigada',
-    'ok', 'blz', 'beleza', 'certo', 'entendi', 'show', 'top', 'massa',
-    'sim', 'não', 'nao', 'yes', 'no', 'yep', 'nope',
+    'oi',
+    'olá',
+    'ola',
+    'opa',
+    'e aí',
+    'eai',
+    'e ai',
+    'hey',
+    'hi',
+    'hello',
+    'bom dia',
+    'boa tarde',
+    'boa noite',
+    'tudo bem',
+    'tudo bom',
+    'como vai',
+    'fala',
+    'salve',
+    'eae',
+    'oie',
+    'oii',
+    'oiii',
+    'olar',
+    'hola',
+    'obrigado',
+    'obrigada',
+    'valeu',
+    'vlw',
+    'thanks',
+    'brigado',
+    'brigada',
+    'ok',
+    'blz',
+    'beleza',
+    'certo',
+    'entendi',
+    'show',
+    'top',
+    'massa',
+    'sim',
+    'não',
+    'nao',
+    'yes',
+    'no',
+    'yep',
+    'nope',
   ];
 
   /**
    * Verifica se o texto é uma saudação simples
    */
   private isGreeting(text: string): boolean {
-    const normalized = text.toLowerCase().trim()
-      .replace(/[!?.,;:]+/g, '')  // Remove pontuação
-      .replace(/\s+/g, ' ');       // Normaliza espaços
+    const normalized = text
+      .toLowerCase()
+      .trim()
+      .replace(/[!?.,;:]+/g, '') // Remove pontuação
+      .replace(/\s+/g, ' '); // Normaliza espaços
 
     // Verifica se é exatamente uma saudação
     if (this.GREETINGS.includes(normalized)) {
@@ -110,7 +154,13 @@ export class ExtractionService {
       });
 
       const intent = response.choices[0]?.message?.content?.trim().toLowerCase();
-      const validIntent = ['query', 'contact_info', 'update_contact', 'register_intent', 'other'].includes(intent || '')
+      const validIntent = [
+        'query',
+        'contact_info',
+        'update_contact',
+        'register_intent',
+        'other',
+      ].includes(intent || '')
         ? (intent as MessageIntent)
         : 'other';
 
@@ -246,9 +296,7 @@ export class ExtractionService {
   ): Promise<RegistrationResponseResult> {
     const { userMessage, conversationHistory, extractedData, phoneFormatted } = params;
 
-    this.logger.log(
-      `Gerando resposta de registro. Dados atuais: ${JSON.stringify(extractedData)}`,
-    );
+    this.logger.log(`Gerando resposta de registro. Dados atuais: ${JSON.stringify(extractedData)}`);
 
     const client = await this.openaiService.getClient();
 
@@ -520,7 +568,9 @@ export class ExtractionService {
     missingFields: string[];
   }): Promise<string> {
     const { name, phone, missingFields } = params;
-    this.logger.log(`Gerando pergunta de contexto para: ${name}, faltando: ${missingFields.join(', ')}`);
+    this.logger.log(
+      `Gerando pergunta de contexto para: ${name}, faltando: ${missingFields.join(', ')}`,
+    );
 
     const client = await this.openaiService.getClient();
 
@@ -680,9 +730,11 @@ export class ExtractionService {
   async classifyIntroResponse(
     userMessage: string,
     connectorName: string,
-    area: string
+    area: string,
   ): Promise<'confirm' | 'reject' | 'other'> {
-    this.logger.log(`Classificando resposta de intro: "${userMessage}" (conector: ${connectorName}, área: ${area})`);
+    this.logger.log(
+      `Classificando resposta de intro: "${userMessage}" (conector: ${connectorName}, área: ${area})`,
+    );
 
     const client = await this.openaiService.getClient();
 
@@ -728,7 +780,9 @@ Responda APENAS com: confirm, reject ou other`;
 
       const result = response.choices[0]?.message?.content?.trim().toLowerCase();
       const validResults = ['confirm', 'reject', 'other'];
-      const classification = validResults.includes(result || '') ? result as 'confirm' | 'reject' | 'other' : 'other';
+      const classification = validResults.includes(result || '')
+        ? (result as 'confirm' | 'reject' | 'other')
+        : 'other';
 
       this.logger.log(`Classificação de intro: ${classification}`);
       return classification;

@@ -401,7 +401,7 @@ export class GroupsService {
     });
 
     // Agrupa por nome/telefone para identificar contatos em comum
-    const contactsMap = new Map<string, { contact: typeof contacts[0]; owners: string[] }>();
+    const contactsMap = new Map<string, { contact: (typeof contacts)[0]; owners: string[] }>();
 
     for (const contact of contacts) {
       const key = contact.phone || contact.name.toLowerCase();
@@ -486,9 +486,7 @@ export class GroupsService {
     });
 
     const memberPhones = new Set(
-      existingMembers
-        .filter((m) => m.user.phone)
-        .map((m) => this.normalizePhone(m.user.phone!)),
+      existingMembers.filter((m) => m.user.phone).map((m) => this.normalizePhone(m.user.phone!)),
     );
 
     // Busca convites existentes para este grupo
