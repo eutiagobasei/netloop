@@ -88,19 +88,21 @@ export default function AppLayout({
                 Loop
               </span>
             </Link>
-            <Link
-              href="/tags"
-              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
-                pathname === '/tags'
-                  ? 'bg-white/10 text-white'
-                  : 'text-gray-400 hover:text-white hover:bg-white/5'
-              }`}
-            >
-              <span className="flex items-center gap-2">
-                <Tag className="h-4 w-4" />
-                Tags
-              </span>
-            </Link>
+            {user?.role === 'ADMIN' && (
+              <Link
+                href="/tags"
+                className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                  pathname === '/tags'
+                    ? 'bg-white/10 text-white'
+                    : 'text-gray-400 hover:text-white hover:bg-white/5'
+                }`}
+              >
+                <span className="flex items-center gap-2">
+                  <Tag className="h-4 w-4" />
+                  Tags
+                </span>
+              </Link>
+            )}
           </nav>
         </div>
         <div className="flex items-center gap-4">
