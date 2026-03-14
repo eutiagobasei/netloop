@@ -515,10 +515,10 @@ export class WhatsappService {
 
     // Qualquer outra resposta é tratada como CONTEXTO (onde se conheceram)
     // Adiciona o contexto aos dados extraídos e salva
+    // Tags serão extraídas pela IA no momento da criação do contato
     const updatedData = {
       ...message.extractedData,
       context: response,
-      tags: [...(message.extractedData?.tags || []), response.split(' ')[0]], // Primeira palavra como tag
     };
 
     await this.prisma.whatsappMessage.update({
