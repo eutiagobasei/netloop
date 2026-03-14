@@ -126,4 +126,70 @@ export const loopApi = {
     api.post<LoopPlanResponse>('/ai/loop/plan', { goal }),
 }
 
+// Tags API types
+export interface Tag {
+  id: string
+  name: string
+  slug: string
+  type: 'FREE' | 'INSTITUTIONAL'
+  color: string | null
+  isVerified: boolean
+  groupId: string | null
+  group?: { id: string; name: string }
+  createdById: string
+  createdAt: string
+  _count?: { contacts: number }
+}
+
+export interface CreateTagDto {
+  name: string
+  color?: string
+  type?: 'FREE' | 'INSTITUTIONAL'
+  groupId?: string
+}
+
+export interface UpdateTagDto {
+  name?: string
+  color?: string
+}
+
+export const tagsApi = {
+  getAll: (type?: 'FREE' | 'INSTITUTIONAL') =>
+    api.get<Tag[]>('/tags', { params: { type } }),
+  create: (data: CreateTagDto) => api.post<Tag>('/tags', data),
+  update: (id: string, data: UpdateTagDto) => api.patch<Tag>(`/tags/${id}`, data),
+  delete: (id: string) => api.delete(`/tags/${id}`),
+}
+
+// Contacts API types
+export interface Contact {
+  id: string
+  name: string
+  phone: string
+  email?: string
+  company?: string
+  position?: string
+  location?: string
+  notes?: string
+  context?: string
+  tags?: { id: string; name: string; color: string | null }[]
+}
+
+export interface UpdateContactDto {
+  name?: string
+  phone?: string
+  email?: string
+  company?: string
+  position?: string
+  location?: string
+  notes?: string
+  context?: string
+  tagIds?: string[]
+}
+
+export const contactsApi = {
+  update: (id: string, data: UpdateContactDto) =>
+    api.patch<Contact>(`/contacts/${id}`, data),
+}
+
 export default api

@@ -189,6 +189,13 @@ export class ContactsService {
     // Gerar embedding de forma assíncrona (não bloqueia a resposta)
     this.generateEmbeddingForContact(contact.id, contactData);
 
+    // Extrair e atribuir tags automaticamente se tiver contexto/cargo/empresa
+    if (contactData.context || contactData.company || contactData.position) {
+      this.extractAndAssignTags(ownerId, contact.id, contactData).catch(err =>
+        this.logger.error(`Erro ao extrair tags: ${err.message}`)
+      );
+    }
+
     return this.formatContactResponse(contact);
   }
 
@@ -306,6 +313,24 @@ export class ContactsService {
 
     // Se tagIds foi fornecido, atualiza as tags
     if (tagIds !== undefined) {
+      // Valida que todas as tags pertencem ao usuário
+      if (tagIds.length > 0) {
+        const validTags = await this.prisma.tag.findMany({
+          where: {
+            id: { in: tagIds },
+            createdById: ownerId,
+          },
+          select: { id: true },
+        });
+
+        const validTagIds = validTags.map(t => t.id);
+        const invalidTagIds = tagIds.filter(id => !validTagIds.includes(id));
+
+        if (invalidTagIds.length > 0) {
+          throw new ForbiddenException('Uma ou mais tags não pertencem a você');
+        }
+      }
+
       // Remove todas as tags existentes
       await this.prisma.contactTag.deleteMany({
         where: { contactId: id },
@@ -869,6 +894,37 @@ export class ContactsService {
     }
 
     this.logger.log(`${tagNames.length} tags processadas para contato ${contactId}`);
+  }
+
+  /**
+   * Extrai tags do contexto/cargo/empresa usando IA e associa ao contato
+   */
+  private async extractAndAssignTags(
+    userId: string,
+    contactId: string,
+    data: Partial<CreateContactDto>,
+  ): Promise<void> {
+    try {
+      const isConfigured = await this.aiService.isConfigured();
+      if (!isConfigured) {
+        this.logger.warn('IA não configurada, pulando extração de tags');
+        return;
+      }
+
+      const extractedTags = await this.aiService.extractTagsFromContext({
+        context: data.context,
+        name: data.name,
+        company: data.company,
+        position: data.position,
+      });
+
+      if (extractedTags.length > 0) {
+        await this.createAndAssignTags(userId, contactId, extractedTags);
+        this.logger.log(`Tags extraídas e atribuídas ao contato ${contactId}: ${extractedTags.join(', ')}`);
+      }
+    } catch (error) {
+      this.logger.error(`Erro ao extrair/atribuir tags: ${error.message}`);
+    }
   }
 
   private formatContactResponse(contact: {

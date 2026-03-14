@@ -135,4 +135,16 @@ export class AIService {
   async generateLoopPlan(userId: string, goal: string): Promise<LoopPlanResponse> {
     return this.loopService.generatePlan(userId, goal);
   }
+
+  /**
+   * Extrai tags relevantes do contexto de um contato usando IA
+   */
+  async extractTagsFromContext(params: {
+    context?: string;
+    name?: string;
+    company?: string;
+    position?: string;
+  }): Promise<string[]> {
+    return this.extractionService.extractTagsFromContext(params);
+  }
 }

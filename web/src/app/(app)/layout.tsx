@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/hooks/use-auth'
-import { LogOut, Network, Sparkles } from 'lucide-react'
+import { LogOut, Network, Sparkles, Tag } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import {
   ImpersonationBanner,
@@ -86,6 +86,19 @@ export default function AppLayout({
               <span className="flex items-center gap-2">
                 <Sparkles className="h-4 w-4" />
                 Loop
+              </span>
+            </Link>
+            <Link
+              href="/tags"
+              className={`px-3 py-1.5 rounded-lg text-sm font-medium transition-colors ${
+                pathname === '/tags'
+                  ? 'bg-white/10 text-white'
+                  : 'text-gray-400 hover:text-white hover:bg-white/5'
+              }`}
+            >
+              <span className="flex items-center gap-2">
+                <Tag className="h-4 w-4" />
+                Tags
               </span>
             </Link>
           </nav>

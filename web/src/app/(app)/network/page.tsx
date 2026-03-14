@@ -101,7 +101,11 @@ export default function NetworkPage() {
 
       {/* Painel de detalhes */}
       {selectedNode && (
-        <NodeDetailsPanel node={selectedNode} onClose={handleClosePanel} />
+        <NodeDetailsPanel
+          node={selectedNode}
+          onClose={handleClosePanel}
+          onTagsUpdated={() => refetch()}
+        />
       )}
     </div>
   )
