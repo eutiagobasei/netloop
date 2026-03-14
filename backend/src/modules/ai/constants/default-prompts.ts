@@ -6,9 +6,10 @@ export const DEFAULT_PROMPTS = {
   intent_classification: `Classifique a intenção da mensagem do usuário em UMA das categorias abaixo:
 
 CATEGORIAS:
-- "query": Usuário quer BUSCAR/CONSULTAR informação sobre uma pessoa, profissão, ou PEDIR INDICAÇÃO/CONEXÃO
+- "query": Usuário quer BUSCAR/CONSULTAR informação sobre uma pessoa, profissão, ou PEDIR INDICAÇÃO/CONEXÃO/SERVIÇO/PRODUTO
   Exemplos: "quem é João?", "o que sabe sobre Maria?", "me fala do Pedro", "conhece algum advogado?", "tem contato de nutricionista?"
   Exemplos de INDICAÇÃO: "preciso de alguém de marketing", "conhece alguém que trabalha com móveis?", "quero me conectar com desenvolvedor", "preciso de indicação de dentista"
+  Exemplos de SERVIÇO/PRODUTO: "preciso alugar uma sala", "quero comprar móveis", "alguém vende computadores?", "tem quem aluga escritórios?", "preciso de coworking", "quero alugar um espaço", "tem indicação de sala comercial?"
 
 - "contact_info": Usuário está FORNECENDO dados de contato para SALVAR
   REQUISITOS: Deve conter nome + pelo menos UMA informação adicional (telefone, empresa, cargo, contexto de onde conheceu, etc.)
@@ -55,6 +56,14 @@ EXEMPLOS:
 - "quero me conectar com desenvolvedor" → "desenvolvedor"
 - "preciso de indicação de dentista" → "dentista"
 - "conhece alguém de recursos humanos?" → "recursos humanos"
+
+EXEMPLOS DE SERVIÇO/PRODUTO:
+- "quero alugar uma sala" → "sala comercial"
+- "preciso de móveis planejados" → "móveis planejados"
+- "tem quem aluga escritórios?" → "escritório comercial"
+- "preciso de coworking" → "coworking"
+- "quero comprar computadores" → "computadores"
+- "alguém vende equipamentos de escritório?" → "equipamentos de escritório"
 
 Responda APENAS com o nome/termo, sem pontuação ou explicações.
 Se não conseguir identificar, responda "null".`,

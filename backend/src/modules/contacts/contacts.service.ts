@@ -1,11 +1,18 @@
-import { Injectable, NotFoundException, ForbiddenException, Inject, forwardRef, Logger, BadRequestException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  Inject,
+  forwardRef,
+  Logger,
+  BadRequestException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
 import { CreateContactDto } from './dto/create-contact.dto';
 import { UpdateContactDto } from './dto/update-contact.dto';
 import { AIService } from '../ai/ai.service';
-import {
-  ExtractionResult,
-} from '../ai/dto/extracted-contact.dto';
+import { ExtractionResult } from '../ai/dto/extracted-contact.dto';
 import { PhoneUtil } from '../../common/utils/phone.util';
 
 // Tipos para resposta de busca
@@ -64,11 +71,11 @@ export class ContactsService {
       .toLowerCase()
       .normalize('NFD')
       .replace(/[\u0300-\u036f]/g, '') // Remove acentos
-      .replace(/ph/gi, 'f')            // ph → f (Philippe → Felipe)
+      .replace(/ph/gi, 'f') // ph → f (Philippe → Felipe)
       .replace(/th(?=[aeiou])/gi, 't') // th antes de vogal → t (Matheus → Mateus)
-      .replace(/y/gi, 'i')             // y → i (Thaysa → Taisa)
-      .replace(/w/gi, 'v')             // w → v (Wagner → Vagner)
-      .replace(/\s+/g, ' ')            // Múltiplos espaços → único
+      .replace(/y/gi, 'i') // y → i (Thaysa → Taisa)
+      .replace(/w/gi, 'v') // w → v (Wagner → Vagner)
+      .replace(/\s+/g, ' ') // Múltiplos espaços → único
       .trim();
   }
 
@@ -78,7 +85,9 @@ export class ContactsService {
   private levenshteinDistance(str1: string, str2: string): number {
     const m = str1.length;
     const n = str2.length;
-    const dp: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+    const dp: number[][] = Array(m + 1)
+      .fill(null)
+      .map(() => Array(n + 1).fill(0));
 
     for (let i = 0; i <= m; i++) dp[i][0] = i;
     for (let j = 0; j <= n; j++) dp[0][j] = j;
@@ -90,8 +99,8 @@ export class ContactsService {
         } else {
           dp[i][j] = Math.min(
             dp[i - 1][j - 1] + 1, // substituição
-            dp[i - 1][j] + 1,     // deleção
-            dp[i][j - 1] + 1      // inserção
+            dp[i - 1][j] + 1, // deleção
+            dp[i][j - 1] + 1, // inserção
           );
         }
       }
@@ -127,7 +136,7 @@ export class ContactsService {
   private async findSimilarNames(
     ownerId: string,
     searchName: string,
-    threshold = 0.6
+    threshold = 0.6,
   ): Promise<{ name: string; similarity: number }[]> {
     const contacts = await this.prisma.contact.findMany({
       where: { ownerId },
@@ -135,11 +144,11 @@ export class ContactsService {
     });
 
     const similar = contacts
-      .map(c => ({
+      .map((c) => ({
         name: c.name,
         similarity: this.calculateSimilarity(searchName, c.name),
       }))
-      .filter(c => c.similarity >= threshold && c.similarity < 1)
+      .filter((c) => c.similarity >= threshold && c.similarity < 1)
       .sort((a, b) => b.similarity - a.similarity)
       .slice(0, 5);
 
@@ -152,7 +161,9 @@ export class ContactsService {
     // Valida e normaliza telefone (obrigatório)
     const normalizedPhone = PhoneUtil.normalize(contactData.phone);
     if (!normalizedPhone) {
-      throw new BadRequestException('Telefone inválido. Use formato brasileiro: 21987654321 ou +5521987654321');
+      throw new BadRequestException(
+        'Telefone inválido. Use formato brasileiro: 21987654321 ou +5521987654321',
+      );
     }
 
     // Verifica duplicata por telefone normalizado
@@ -161,7 +172,9 @@ export class ContactsService {
     });
 
     if (existingByPhone) {
-      throw new ConflictException(`Já existe um contato com este telefone: ${existingByPhone.name}`);
+      throw new ConflictException(
+        `Já existe um contato com este telefone: ${existingByPhone.name}`,
+      );
     }
 
     const contact = await this.prisma.contact.create({
@@ -191,8 +204,8 @@ export class ContactsService {
 
     // Extrair e atribuir tags automaticamente se tiver contexto/cargo/empresa
     if (contactData.context || contactData.company || contactData.position) {
-      this.extractAndAssignTags(ownerId, contact.id, contactData).catch(err =>
-        this.logger.error(`Erro ao extrair tags: ${err.message}`)
+      this.extractAndAssignTags(ownerId, contact.id, contactData).catch((err) =>
+        this.logger.error(`Erro ao extrair tags: ${err.message}`),
       );
     }
 
@@ -202,7 +215,10 @@ export class ContactsService {
   /**
    * Gera embedding para um contato de forma assíncrona
    */
-  private async generateEmbeddingForContact(contactId: string, contactData: Partial<CreateContactDto>) {
+  private async generateEmbeddingForContact(
+    contactId: string,
+    contactData: Partial<CreateContactDto>,
+  ) {
     try {
       const isConfigured = await this.aiService.isConfigured();
       if (!isConfigured) {
@@ -323,8 +339,8 @@ export class ContactsService {
           select: { id: true },
         });
 
-        const validTagIds = validTags.map(t => t.id);
-        const invalidTagIds = tagIds.filter(id => !validTagIds.includes(id));
+        const validTagIds = validTags.map((t) => t.id);
+        const invalidTagIds = tagIds.filter((id) => !validTagIds.includes(id));
 
         if (invalidTagIds.length > 0) {
           throw new ForbiddenException('Uma ou mais tags não pertencem a você');
@@ -361,7 +377,9 @@ export class ContactsService {
 
     // Regenerar embedding se campos relevantes foram atualizados
     const relevantFields = ['name', 'company', 'position', 'location', 'context', 'notes'];
-    const hasRelevantChange = relevantFields.some(field => dto[field as keyof UpdateContactDto] !== undefined);
+    const hasRelevantChange = relevantFields.some(
+      (field) => dto[field as keyof UpdateContactDto] !== undefined,
+    );
 
     if (hasRelevantChange) {
       this.generateEmbeddingForContact(id, {
@@ -540,7 +558,7 @@ export class ContactsService {
 
     // 5. Não encontrou - buscar nomes similares para sugestão
     const similarNames = await this.findSimilarNames(ownerId, searchName);
-    const suggestions = similarNames.map(s => s.name);
+    const suggestions = similarNames.map((s) => s.name);
 
     return {
       type: 'nenhum',
@@ -549,6 +567,231 @@ export class ContactsService {
       suggestions,
       query: searchName,
     };
+  }
+
+  // ============================================
+  // BUSCA POR SERVIÇO/PRODUTO
+  // ============================================
+
+  /**
+   * Mapeamento de termos de serviço para keywords de empresa
+   * Permite encontrar "Sea Offices" quando usuário pede "sala"
+   */
+  private readonly SERVICE_KEYWORDS: Record<string, string[]> = {
+    sala: ['office', 'coworking', 'escritorio', 'comercial', 'sala'],
+    'sala comercial': ['office', 'coworking', 'escritorio', 'comercial'],
+    escritorio: ['office', 'coworking', 'comercial', 'escritorio'],
+    escritório: ['office', 'coworking', 'comercial', 'escritorio'],
+    coworking: ['office', 'coworking', 'workspace', 'hub'],
+    espaco: ['office', 'coworking', 'espaco', 'space'],
+    espaço: ['office', 'coworking', 'espaco', 'space'],
+    moveis: ['moveis', 'marcenaria', 'planejados', 'mobilia', 'furniture'],
+    móveis: ['moveis', 'marcenaria', 'planejados', 'mobilia', 'furniture'],
+    'moveis planejados': ['moveis', 'marcenaria', 'planejados'],
+    'móveis planejados': ['moveis', 'marcenaria', 'planejados'],
+    computador: ['computador', 'informatica', 'tech', 'tecnologia', 'ti'],
+    computadores: ['computador', 'informatica', 'tech', 'tecnologia', 'ti'],
+    equipamentos: ['equipamentos', 'suprimentos', 'supplies'],
+    impressora: ['impressora', 'impressao', 'grafica', 'print'],
+    grafica: ['grafica', 'impressao', 'print', 'design'],
+    gráfica: ['grafica', 'impressao', 'print', 'design'],
+    advogado: ['advocacia', 'advogados', 'juridico', 'law', 'legal'],
+    contador: ['contabilidade', 'contadores', 'contabil', 'accounting'],
+    contabilidade: ['contabilidade', 'contadores', 'contabil', 'accounting'],
+    marketing: ['marketing', 'publicidade', 'propaganda', 'midia', 'digital'],
+    design: ['design', 'designer', 'criativo', 'creative'],
+    tecnologia: ['tech', 'tecnologia', 'software', 'ti', 'desenvolvimento'],
+    software: ['software', 'tech', 'desenvolvimento', 'sistemas'],
+    fotografia: ['foto', 'fotografia', 'fotografo', 'photo', 'studio'],
+    video: ['video', 'filmagem', 'producao', 'audiovisual'],
+    consultoria: ['consultoria', 'consulting', 'assessoria'],
+    treinamento: ['treinamento', 'capacitacao', 'curso', 'training'],
+  };
+
+  /**
+   * Busca contatos que oferecem um serviço ou produto específico
+   * Usa múltiplas estratégias: semântica, keywords em nome de empresa, tags, texto livre
+   */
+  async searchByServiceOrProduct(
+    ownerId: string,
+    query: string,
+    limit = 5,
+  ): Promise<{ contacts: any[]; searchType: string }> {
+    const normalizedQuery = this.normalizeString(query);
+    this.logger.log(`Busca por serviço/produto: "${query}" (normalizado: "${normalizedQuery}")`);
+
+    // 1. Busca semântica em context/notes (se IA configurada)
+    try {
+      const isConfigured = await this.aiService.isConfigured();
+      if (isConfigured) {
+        const semanticResults = await this.semanticSearchContacts(ownerId, query, limit);
+        const filtered = semanticResults.filter((c) => c.similarity > 0.7);
+        if (filtered.length > 0) {
+          this.logger.log(`Busca semântica encontrou ${filtered.length} resultados`);
+          return { contacts: filtered, searchType: 'semantic' };
+        }
+      }
+    } catch (error) {
+      this.logger.warn(`Erro na busca semântica: ${error.message}`);
+    }
+
+    // 2. Busca por keywords no nome da empresa
+    const companyResults = await this.searchByCompanyKeywords(ownerId, normalizedQuery, limit);
+    if (companyResults.length > 0) {
+      this.logger.log(
+        `Busca por keywords de empresa encontrou ${companyResults.length} resultados`,
+      );
+      return { contacts: companyResults, searchType: 'company_keywords' };
+    }
+
+    // 3. Busca por tags relacionadas
+    const tagResults = await this.searchByRelatedTags(ownerId, normalizedQuery, limit);
+    if (tagResults.length > 0) {
+      this.logger.log(`Busca por tags encontrou ${tagResults.length} resultados`);
+      return { contacts: tagResults, searchType: 'tags' };
+    }
+
+    // 4. Fallback: busca texto livre em context/notes/company/position
+    const textResults = await this.searchByTextForService(ownerId, query, limit);
+    if (textResults.length > 0) {
+      this.logger.log(`Busca por texto encontrou ${textResults.length} resultados`);
+      return { contacts: textResults, searchType: 'text' };
+    }
+
+    this.logger.log(`Nenhum resultado encontrado para serviço: "${query}"`);
+    return { contacts: [], searchType: 'none' };
+  }
+
+  /**
+   * Busca contatos por keywords no nome da empresa
+   * Ex: "sala" → busca empresas com "office", "coworking", etc.
+   */
+  private async searchByCompanyKeywords(
+    ownerId: string,
+    normalizedQuery: string,
+    limit: number,
+  ): Promise<any[]> {
+    // Obtém as keywords relacionadas ao termo de busca
+    const keywords = this.getRelatedKeywords(normalizedQuery);
+    if (keywords.length === 0) {
+      return [];
+    }
+
+    this.logger.log(`Keywords para "${normalizedQuery}": ${keywords.join(', ')}`);
+
+    // Busca contatos cujo nome de empresa contém alguma das keywords
+    const contacts = await this.prisma.contact.findMany({
+      where: {
+        ownerId,
+        OR: keywords.flatMap((keyword) => [
+          { company: { contains: keyword, mode: 'insensitive' } },
+          { name: { contains: keyword, mode: 'insensitive' } },
+        ]),
+      },
+      include: {
+        tags: { include: { tag: true } },
+      },
+      take: limit,
+    });
+
+    return contacts.map(this.formatContactResponse);
+  }
+
+  /**
+   * Obtém keywords relacionadas a um termo de serviço
+   */
+  private getRelatedKeywords(normalizedQuery: string): string[] {
+    // Busca correspondência direta no mapeamento
+    if (this.SERVICE_KEYWORDS[normalizedQuery]) {
+      return this.SERVICE_KEYWORDS[normalizedQuery];
+    }
+
+    // Busca correspondência parcial (termo contém ou está contido)
+    for (const [term, keywords] of Object.entries(this.SERVICE_KEYWORDS)) {
+      const normalizedTerm = this.normalizeString(term);
+      if (normalizedQuery.includes(normalizedTerm) || normalizedTerm.includes(normalizedQuery)) {
+        return keywords;
+      }
+    }
+
+    // Se não encontrou mapeamento, usa o próprio termo como keyword
+    return [normalizedQuery];
+  }
+
+  /**
+   * Busca contatos por tags relacionadas ao serviço/produto
+   */
+  private async searchByRelatedTags(
+    ownerId: string,
+    normalizedQuery: string,
+    limit: number,
+  ): Promise<any[]> {
+    const keywords = this.getRelatedKeywords(normalizedQuery);
+
+    // Busca tags que contêm alguma das keywords
+    const tags = await this.prisma.tag.findMany({
+      where: {
+        createdById: ownerId,
+        OR: keywords.map((keyword) => ({
+          OR: [
+            { name: { contains: keyword, mode: 'insensitive' } },
+            { slug: { contains: keyword, mode: 'insensitive' } },
+          ],
+        })),
+      },
+      select: { id: true },
+    });
+
+    if (tags.length === 0) {
+      return [];
+    }
+
+    // Busca contatos com essas tags
+    const contacts = await this.prisma.contact.findMany({
+      where: {
+        ownerId,
+        tags: {
+          some: {
+            tagId: { in: tags.map((t) => t.id) },
+          },
+        },
+      },
+      include: {
+        tags: { include: { tag: true } },
+      },
+      take: limit,
+    });
+
+    return contacts.map(this.formatContactResponse);
+  }
+
+  /**
+   * Busca texto livre em campos relevantes para serviço/produto
+   */
+  private async searchByTextForService(
+    ownerId: string,
+    query: string,
+    limit: number,
+  ): Promise<any[]> {
+    const keywords = this.getRelatedKeywords(this.normalizeString(query));
+
+    const contacts = await this.prisma.contact.findMany({
+      where: {
+        ownerId,
+        OR: keywords.flatMap((keyword) => [
+          { context: { contains: keyword, mode: 'insensitive' } },
+          { notes: { contains: keyword, mode: 'insensitive' } },
+          { company: { contains: keyword, mode: 'insensitive' } },
+          { position: { contains: keyword, mode: 'insensitive' } },
+        ]),
+      },
+      include: {
+        tags: { include: { tag: true } },
+      },
+      take: limit,
+    });
+
+    return contacts.map(this.formatContactResponse);
   }
 
   /**
@@ -587,7 +830,9 @@ export class ContactsService {
     for (const contact of contacts) {
       const similarity = this.calculateSimilarity(searchName, contact.name);
       if (similarity >= 0.85) {
-        this.logger.log(`Match por similaridade (${(similarity * 100).toFixed(0)}%): ${contact.name}`);
+        this.logger.log(
+          `Match por similaridade (${(similarity * 100).toFixed(0)}%): ${contact.name}`,
+        );
         return contact;
       }
     }
@@ -742,10 +987,7 @@ export class ContactsService {
   /**
    * Cria ou atualiza contato a partir de extração
    */
-  async upsertFromExtraction(
-    ownerId: string,
-    extraction: ExtractionResult,
-  ) {
+  async upsertFromExtraction(ownerId: string, extraction: ExtractionResult) {
     if (!extraction.success || !extraction.data.name) {
       throw new Error('Dados de extração inválidos');
     }
@@ -785,10 +1027,10 @@ export class ContactsService {
     if (extractedContact.tags && extractedContact.tags.length > 0) {
       await this.createAndAssignTags(ownerId, contact.id, extractedContact.tags);
       // Recarregar contato com tags atualizadas
-      contact = await this.prisma.contact.findUnique({
+      contact = (await this.prisma.contact.findUnique({
         where: { id: contact.id },
         include: { tags: { include: { tag: true } } },
-      }) as typeof contact;
+      })) as typeof contact;
     }
 
     // Gerar embedding assíncrono
@@ -920,7 +1162,9 @@ export class ContactsService {
 
       if (extractedTags.length > 0) {
         await this.createAndAssignTags(userId, contactId, extractedTags);
-        this.logger.log(`Tags extraídas e atribuídas ao contato ${contactId}: ${extractedTags.join(', ')}`);
+        this.logger.log(
+          `Tags extraídas e atribuídas ao contato ${contactId}: ${extractedTags.join(', ')}`,
+        );
       }
     } catch (error) {
       this.logger.error(`Erro ao extrair/atribuir tags: ${error.message}`);

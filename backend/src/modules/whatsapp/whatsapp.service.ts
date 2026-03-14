@@ -28,20 +28,29 @@ export class WhatsappService {
   private readonly logger = new Logger(WhatsappService.name);
 
   // Estado de atualização pendente: Map<phone, { contactId, contactName, timestamp }>
-  private pendingUpdates = new Map<string, { contactId: string; contactName: string; timestamp: number }>();
+  private pendingUpdates = new Map<
+    string,
+    { contactId: string; contactName: string; timestamp: number }
+  >();
 
   // Estado de pedido de contexto pendente: Map<phone, { contactId, contactName, timestamp }>
-  private pendingContextRequests = new Map<string, { contactId: string; contactName: string; timestamp: number }>();
+  private pendingContextRequests = new Map<
+    string,
+    { contactId: string; contactName: string; timestamp: number }
+  >();
 
   // Estado de pedido de apresentação de 2º grau pendente
-  private pendingIntroRequests = new Map<string, {
-    connectorName: string;
-    connectorPhone: string | null;
-    area: string;
-    query: string;
-    requesterName: string;
-    timestamp: number;
-  }>();
+  private pendingIntroRequests = new Map<
+    string,
+    {
+      connectorName: string;
+      connectorPhone: string | null;
+      area: string;
+      query: string;
+      requesterName: string;
+      timestamp: number;
+    }
+  >();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -61,7 +70,9 @@ export class WhatsappService {
     const rawEvent = payload?.event || '';
     const normalizedEvent = rawEvent.toLowerCase().replace(/_/g, '.');
 
-    this.logger.log(`Webhook Evolution recebido: event=${rawEvent} (normalizado: ${normalizedEvent})`);
+    this.logger.log(
+      `Webhook Evolution recebido: event=${rawEvent} (normalizado: ${normalizedEvent})`,
+    );
     this.logger.log(`Payload keys: ${Object.keys(payload || {}).join(', ')}`);
 
     // Só processa eventos de mensagens recebidas
@@ -118,14 +129,21 @@ export class WhatsappService {
       fromPhone = remoteJid?.split('@')[0] || '';
     }
 
-    this.logger.log(`Número extraído: ${fromPhone}, senderPn: ${data.key.senderPn}, remoteJid: ${remoteJid}`);
+    this.logger.log(
+      `Número extraído: ${fromPhone}, senderPn: ${data.key.senderPn}, remoteJid: ${remoteJid}`,
+    );
     const pushName = data.pushName || '';
 
     // Extrai o conteúdo da mensagem
     const content = this.extractMessageContent(data);
     let audioUrl: string | undefined;
     let messageType: MessageType = MessageType.TEXT;
-    let vcardData: { name: string; phone: string | null; email: string | null; company: string | null } | null = null;
+    let vcardData: {
+      name: string;
+      phone: string | null;
+      email: string | null;
+      company: string | null;
+    } | null = null;
 
     if (data.message?.audioMessage) {
       messageType = MessageType.AUDIO;
@@ -164,19 +182,24 @@ export class WhatsappService {
       if (messageType === MessageType.AUDIO && messageKey) {
         try {
           messageContent = await this.transcribeAudioViaEvolution(messageKey);
-          this.logger.log(`Áudio transcrito no fluxo de registro: ${messageContent?.substring(0, 50)}...`);
+          this.logger.log(
+            `Áudio transcrito no fluxo de registro: ${messageContent?.substring(0, 50)}...`,
+          );
         } catch (error) {
           this.logger.error(`Erro ao transcrever áudio no registro: ${error.message}`);
           await this.evolutionService.sendTextMessage(
             fromPhone,
-            '🎤 Não consegui entender o áudio. Por favor, envie sua resposta por texto.'
+            '🎤 Não consegui entender o áudio. Por favor, envie sua resposta por texto.',
           );
           return { status: 'audio_transcription_failed' };
         }
       }
 
       if (messageContent) {
-        const result = await this.registrationService.processFlowResponse(fromPhone, messageContent);
+        const result = await this.registrationService.processFlowResponse(
+          fromPhone,
+          messageContent,
+        );
         if (result.completed) {
           return { status: 'registration_completed', userId: result.userId };
         }
@@ -185,7 +208,17 @@ export class WhatsappService {
     }
 
     // Usuário cadastrado - processar mensagem normalmente
-    return this.processUserMessage(user.id, fromPhone, pushName, content, audioUrl, messageType, messageId, messageKey, vcardData);
+    return this.processUserMessage(
+      user.id,
+      fromPhone,
+      pushName,
+      content,
+      audioUrl,
+      messageType,
+      messageId,
+      messageKey,
+      vcardData,
+    );
   }
 
   /**
@@ -196,7 +229,7 @@ export class WhatsappService {
     content: string | null,
     audioUrl?: string,
     messageType?: MessageType,
-    messageKey?: any
+    messageKey?: any,
   ) {
     // Verifica se já existe fluxo de registro ativo
     const activeFlow = await this.registrationService.getActiveFlow(phone);
@@ -207,12 +240,14 @@ export class WhatsappService {
       if (messageType === MessageType.AUDIO && messageKey) {
         try {
           messageContent = await this.transcribeAudioViaEvolution(messageKey);
-          this.logger.log(`Áudio transcrito no registro (unknown): ${messageContent?.substring(0, 50)}...`);
+          this.logger.log(
+            `Áudio transcrito no registro (unknown): ${messageContent?.substring(0, 50)}...`,
+          );
         } catch (error) {
           this.logger.error(`Erro ao transcrever áudio no registro: ${error.message}`);
           await this.evolutionService.sendTextMessage(
             phone,
-            '🎤 Não consegui entender o áudio. Por favor, envie sua resposta por texto.'
+            '🎤 Não consegui entender o áudio. Por favor, envie sua resposta por texto.',
           );
           return { status: 'audio_transcription_failed' };
         }
@@ -270,7 +305,12 @@ export class WhatsappService {
     messageType: MessageType,
     messageId: string,
     messageKey?: any,
-    vcardData?: { name: string; phone: string | null; email: string | null; company: string | null } | null,
+    vcardData?: {
+      name: string;
+      phone: string | null;
+      email: string | null;
+      company: string | null;
+    } | null,
   ) {
     // Verifica se é uma resposta de aprovação
     const pendingMessage = await this.findPendingApproval(userId, fromPhone);
@@ -292,13 +332,19 @@ export class WhatsappService {
         try {
           const transcription = await this.transcribeAudioViaEvolution(messageKey);
           if (transcription) {
-            return this.handleContextResponse(userId, fromPhone, pendingContext, transcription, messageId);
+            return this.handleContextResponse(
+              userId,
+              fromPhone,
+              pendingContext,
+              transcription,
+              messageId,
+            );
           }
         } catch (error) {
           this.logger.error(`Erro ao transcrever áudio para contexto: ${error.message}`);
           await this.evolutionService.sendTextMessage(
             fromPhone,
-            '🎤 Não consegui entender o áudio. Por favor, envie o contexto por texto.'
+            '🎤 Não consegui entender o áudio. Por favor, envie o contexto por texto.',
           );
           return { status: 'audio_transcription_failed' };
         }
@@ -407,7 +453,17 @@ export class WhatsappService {
     this.logger.log(`Resposta recebida: "${response}" para mensagem ${message.id}`);
 
     // Respostas de rejeição
-    const rejectResponses = ['não', 'nao', 'n', 'cancelar', 'cancel', 'rejeitar', 'descartar', 'apagar', 'deletar'];
+    const rejectResponses = [
+      'não',
+      'nao',
+      'n',
+      'cancelar',
+      'cancel',
+      'rejeitar',
+      'descartar',
+      'apagar',
+      'deletar',
+    ];
 
     // Respostas de skip (pular sem contexto)
     const skipResponses = ['pular', 'skip', 'ok', 'salvar', 'sim', 's', 'y', 'yes'];
@@ -421,10 +477,7 @@ export class WhatsappService {
         },
       });
 
-      await this.evolutionService.sendTextMessage(
-        message.fromPhone,
-        'Descartado 👍'
-      );
+      await this.evolutionService.sendTextMessage(message.fromPhone, 'Descartado 👍');
 
       return { status: 'rejected' };
     }
@@ -443,7 +496,7 @@ export class WhatsappService {
         // Pergunta o contexto agora que temos o telefone
         await this.evolutionService.sendTextMessage(
           message.fromPhone,
-          `De onde vocês se conhecem?`
+          `De onde vocês se conhecem?`,
         );
 
         return { status: 'phone_added' };
@@ -465,7 +518,7 @@ export class WhatsappService {
     const updatedData = {
       ...message.extractedData,
       context: response,
-      tags: [...(message.extractedData?.tags || []), response.split(' ')[0]] // Primeira palavra como tag
+      tags: [...(message.extractedData?.tags || []), response.split(' ')[0]], // Primeira palavra como tag
     };
 
     await this.prisma.whatsappMessage.update({
@@ -487,7 +540,7 @@ export class WhatsappService {
         const correctedData = {
           ...originalData,
           ...Object.fromEntries(
-            Object.entries(extraction.data).filter(([_, v]) => v !== null && v !== undefined)
+            Object.entries(extraction.data).filter(([_, v]) => v !== null && v !== undefined),
           ),
         };
 
@@ -521,10 +574,12 @@ export class WhatsappService {
     if (!extractedData.phone) {
       this.logger.warn(`Phone ausente para contato: ${extractedData.name}`);
 
-      await this.evolutionService.sendTextMessage(
-        message.fromPhone,
-        `⚠️ Não consegui identificar o telefone de *${extractedData.name}*.\n\nEnvie o número para completar o cadastro.\n_Exemplo: 21987654321_`
-      ).catch(() => {});
+      await this.evolutionService
+        .sendTextMessage(
+          message.fromPhone,
+          `⚠️ Não consegui identificar o telefone de *${extractedData.name}*.\n\nEnvie o número para completar o cadastro.\n_Exemplo: 21987654321_`,
+        )
+        .catch(() => {});
 
       // Mantém status AWAITING para que a próxima mensagem seja tratada como resposta
       return { status: 'missing_phone' };
@@ -532,7 +587,11 @@ export class WhatsappService {
 
     try {
       // Cria o contato e a conexão
-      const contact = await this.createContactAndConnection(message.userId, extractedData, message.transcription || message.content);
+      const contact = await this.createContactAndConnection(
+        message.userId,
+        extractedData,
+        message.transcription || message.content,
+      );
 
       // Atualiza o status da mensagem
       await this.prisma.whatsappMessage.update({
@@ -560,10 +619,12 @@ export class WhatsappService {
       this.logger.error('Erro ao criar contato:', error);
 
       // Notifica o usuário que houve erro (ao invés de silêncio)
-      await this.evolutionService.sendTextMessage(
-        message.fromPhone,
-        `❌ Erro ao salvar contato *${extractedData.name}*. Tente enviar novamente.`
-      ).catch(() => {}); // Ignora erro do envio
+      await this.evolutionService
+        .sendTextMessage(
+          message.fromPhone,
+          `❌ Erro ao salvar contato *${extractedData.name}*. Tente enviar novamente.`,
+        )
+        .catch(() => {}); // Ignora erro do envio
 
       return { status: 'error' };
     }
@@ -598,13 +659,17 @@ export class WhatsappService {
       contactName,
       timestamp: Date.now(),
     });
-    this.logger.log(`Estado de contexto pendente salvo para ${phone}: ${contactName} (${contactId})`);
+    this.logger.log(
+      `Estado de contexto pendente salvo para ${phone}: ${contactName} (${contactId})`,
+    );
   }
 
   /**
    * Obtém estado de pedido de contexto pendente (se não expirou)
    */
-  private getPendingContextRequest(phone: string): { contactId: string; contactName: string } | null {
+  private getPendingContextRequest(
+    phone: string,
+  ): { contactId: string; contactName: string } | null {
     const pending = this.pendingContextRequests.get(phone);
     if (!pending) return null;
 
@@ -634,9 +699,11 @@ export class WhatsappService {
     fromPhone: string,
     pendingContext: { contactId: string; contactName: string },
     content: string,
-    messageId: string
+    messageId: string,
   ) {
-    this.logger.log(`Processando contexto adicional para ${pendingContext.contactName}: "${content}"`);
+    this.logger.log(
+      `Processando contexto adicional para ${pendingContext.contactName}: "${content}"`,
+    );
 
     try {
       // Limpa o estado de contexto pendente
@@ -650,18 +717,14 @@ export class WhatsappService {
 
       // Monta o novo contexto (acumula com existente se houver)
       const existingContext = existingContact?.context || '';
-      const newContext = existingContext
-        ? `${existingContext}\n\n${content}`
-        : content;
+      const newContext = existingContext ? `${existingContext}\n\n${content}` : content;
 
       // Atualiza o contato com o novo contexto
       await this.prisma.contact.update({
         where: { id: pendingContext.contactId },
         data: {
           context: newContext,
-          notes: existingContact?.notes
-            ? `${existingContact.notes}\n${content}`
-            : content,
+          notes: existingContact?.notes ? `${existingContact.notes}\n${content}` : content,
         },
       });
 
@@ -683,25 +746,28 @@ export class WhatsappService {
       // Envia confirmação
       await this.evolutionService.sendTextMessage(
         fromPhone,
-        `✨ Contexto adicionado a *${pendingContext.contactName}*! Seu contato agora está mais completo.`
+        `✨ Contexto adicionado a *${pendingContext.contactName}*! Seu contato agora está mais completo.`,
       );
 
       this.logger.log(`Contexto adicionado para ${pendingContext.contactName}`);
       return { status: 'context_added', contactId: pendingContext.contactId };
-
     } catch (error) {
       this.logger.error(`Erro ao adicionar contexto: ${error.message}`);
 
-      await this.evolutionService.sendTextMessage(
-        fromPhone,
-        `❌ Erro ao adicionar contexto. Tente novamente.`
-      ).catch(() => {});
+      await this.evolutionService
+        .sendTextMessage(fromPhone, `❌ Erro ao adicionar contexto. Tente novamente.`)
+        .catch(() => {});
 
       return { status: 'error' };
     }
   }
 
-  async processMessageWithAI(messageId: string, type: MessageType, fromPhone: string, messageKey?: any) {
+  async processMessageWithAI(
+    messageId: string,
+    type: MessageType,
+    fromPhone: string,
+    messageKey?: any,
+  ) {
     this.logger.log(`Processando mensagem ${messageId} com IA`);
 
     const message = await this.prisma.whatsappMessage.findUnique({
@@ -750,7 +816,7 @@ export class WhatsappService {
           const introResponse = await this.aiService.classifyIntroResponse(
             transcription,
             pendingIntro.connectorName,
-            pendingIntro.area
+            pendingIntro.area,
           );
           this.logger.log(`[Intro] Classificação IA: ${introResponse}`);
 
@@ -760,7 +826,8 @@ export class WhatsappService {
 
             // Envia o contato do conector para o usuário entrar em contato diretamente
             if (pendingIntro.connectorPhone) {
-              const confirmMessage = `📱 Aqui está o contato de *${pendingIntro.connectorName}* para você pedir a apresentação:\n\n` +
+              const confirmMessage =
+                `📱 Aqui está o contato de *${pendingIntro.connectorName}* para você pedir a apresentação:\n\n` +
                 `Telefone: ${this.formatPhoneForDisplay(pendingIntro.connectorPhone)}\n\n` +
                 `💡 Dica: Mencione que está procurando alguém de *${pendingIntro.area}*!`;
               await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
@@ -771,12 +838,15 @@ export class WhatsappService {
                 phoneNumber: pendingIntro.connectorPhone,
               });
             } else {
-              const confirmMessage = `📱 *${pendingIntro.connectorName}* pode te conectar com alguém de *${pendingIntro.area}*!\n\n` +
+              const confirmMessage =
+                `📱 *${pendingIntro.connectorName}* pode te conectar com alguém de *${pendingIntro.area}*!\n\n` +
                 `Infelizmente não tenho o telefone dele cadastrado. Você conhece ele?`;
               await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
             }
 
-            this.logger.log(`[Intro] Contato do conector enviado para ${fromPhone}: ${pendingIntro.connectorName}`);
+            this.logger.log(
+              `[Intro] Contato do conector enviado para ${fromPhone}: ${pendingIntro.connectorName}`,
+            );
 
             await this.prisma.whatsappMessage.update({
               where: { id: messageId },
@@ -792,7 +862,10 @@ export class WhatsappService {
             // Usuário recusou
             this.pendingIntroRequests.delete(fromPhone);
 
-            await this.evolutionService.sendTextMessage(fromPhone, 'Sem problemas! Se precisar de outra coisa, é só me chamar. 👋');
+            await this.evolutionService.sendTextMessage(
+              fromPhone,
+              'Sem problemas! Se precisar de outra coisa, é só me chamar. 👋',
+            );
 
             await this.prisma.whatsappMessage.update({
               where: { id: messageId },
@@ -820,13 +893,46 @@ export class WhatsappService {
 
         if (querySubject) {
           const searchResult = await this.contactsService.search(message.userId, querySubject);
-          this.logger.log(`Resultado da busca: type=${searchResult.type}, data.length=${searchResult.data?.length || 0}`);
+          this.logger.log(
+            `Resultado da busca: type=${searchResult.type}, data.length=${searchResult.data?.length || 0}`,
+          );
 
-          // Se não encontrou em 1º grau, busca em 2º grau
+          // Se não encontrou em 1º grau, tenta busca por serviço/produto
           if (searchResult.type === 'nenhum') {
+            const serviceResult = await this.contactsService.searchByServiceOrProduct(
+              message.userId,
+              querySubject,
+            );
+
+            if (serviceResult.contacts.length > 0) {
+              // Encontrou prestadores de serviço - envia resposta formatada
+              await this.sendServiceProviderResponse(
+                fromPhone,
+                serviceResult.contacts,
+                querySubject,
+              );
+
+              // Atualiza a mensagem como processada
+              await this.prisma.whatsappMessage.update({
+                where: { id: messageId },
+                data: {
+                  transcription,
+                  processed: true,
+                  processedAt: new Date(),
+                  approvalStatus: 'APPROVED',
+                },
+              });
+
+              this.logger.log(
+                `Query de serviço processada para ${messageId}: ${querySubject} - ${serviceResult.contacts.length} resultados via ${serviceResult.searchType}`,
+              );
+              return;
+            }
+
+            // Se não encontrou por serviço, tenta 2º grau
             const secondDegreeResults = await this.connectionsService.getSecondDegreeContacts(
               message.userId,
-              querySubject
+              querySubject,
             );
 
             if (secondDegreeResults.length > 0) {
@@ -841,7 +947,9 @@ export class WhatsappService {
                   fullName: connector.connectorName,
                   phoneNumber: connector.connectorPhone,
                 });
-                this.logger.log(`[2º grau] Contato de ${connector.connectorName} enviado para ${fromPhone}`);
+                this.logger.log(
+                  `[2º grau] Contato de ${connector.connectorName} enviado para ${fromPhone}`,
+                );
               }
 
               // Atualiza a mensagem como processada
@@ -855,7 +963,9 @@ export class WhatsappService {
                 },
               });
 
-              this.logger.log(`Query de 2º grau processada para ${messageId}: ${querySubject} - ${secondDegreeResults.length} resultados`);
+              this.logger.log(
+                `Query de 2º grau processada para ${messageId}: ${querySubject} - ${secondDegreeResults.length} resultados`,
+              );
               return;
             }
           }
@@ -866,7 +976,7 @@ export class WhatsappService {
           // Não conseguiu extrair o assunto, responde pedindo mais detalhes
           await this.evolutionService.sendTextMessage(
             fromPhone,
-            '🤔 Não entendi sobre quem você quer saber. Pode me dizer o nome da pessoa?'
+            '🤔 Não entendi sobre quem você quer saber. Pode me dizer o nome da pessoa?',
           );
         }
 
@@ -881,7 +991,9 @@ export class WhatsappService {
           },
         });
 
-        this.logger.log(`Query processada para ${messageId}: ${querySubject || 'assunto não identificado'}`);
+        this.logger.log(
+          `Query processada para ${messageId}: ${querySubject || 'assunto não identificado'}`,
+        );
         return;
       }
 
@@ -892,7 +1004,7 @@ export class WhatsappService {
         if (contactName) {
           const existingContact = await this.contactsService.searchByNameNormalized(
             message.userId,
-            contactName
+            contactName,
           );
 
           if (existingContact) {
@@ -905,14 +1017,14 @@ export class WhatsappService {
             // Não encontrou - pergunta qual contato
             await this.evolutionService.sendTextMessage(
               fromPhone,
-              `🤔 Não encontrei *${contactName}* na sua rede.\n\nQual contato você quer atualizar?`
+              `🤔 Não encontrei *${contactName}* na sua rede.\n\nQual contato você quer atualizar?`,
             );
           }
         } else {
           // Não conseguiu extrair o nome
           await this.evolutionService.sendTextMessage(
             fromPhone,
-            '🤔 Não entendi qual contato você quer atualizar. Pode me dizer o nome da pessoa?'
+            '🤔 Não entendi qual contato você quer atualizar. Pode me dizer o nome da pessoa?',
           );
         }
 
@@ -927,7 +1039,9 @@ export class WhatsappService {
           },
         });
 
-        this.logger.log(`Update contact processado para ${messageId}: ${contactName || 'nome não identificado'}`);
+        this.logger.log(
+          `Update contact processado para ${messageId}: ${contactName || 'nome não identificado'}`,
+        );
         return;
       }
 
@@ -1044,7 +1158,7 @@ export class WhatsappService {
    */
   private async sendSearchResponse(
     toPhone: string,
-    result: { type: string; message: string; data: any[]; suggestions?: string[]; query?: string }
+    result: { type: string; message: string; data: any[]; suggestions?: string[]; query?: string },
   ) {
     let responseText: string;
 
@@ -1053,7 +1167,10 @@ export class WhatsappService {
 
       // Se tem sugestões, oferece alternativas
       if (result.suggestions && result.suggestions.length > 0) {
-        const suggestionList = result.suggestions.slice(0, 3).map(s => `*${s}*`).join(', ');
+        const suggestionList = result.suggestions
+          .slice(0, 3)
+          .map((s) => `*${s}*`)
+          .join(', ');
         responseText = `🤔 Hmm, não encontrei ninguém chamado *${query}* na sua rede.\n\nVocê quis dizer ${suggestionList}?\n\n💡 _Ou envie informações sobre a pessoa para cadastrá-la._`;
       } else {
         // Sem sugestões - mensagem simples mas conversacional
@@ -1062,6 +1179,80 @@ export class WhatsappService {
     } else {
       // Encontrou - resposta direta do service já é conversacional
       responseText = result.message;
+    }
+
+    await this.evolutionService.sendTextMessage(toPhone, responseText);
+  }
+
+  /**
+   * Envia resposta formatada para busca de serviço/produto
+   */
+  private async sendServiceProviderResponse(
+    toPhone: string,
+    contacts: any[],
+    query: string,
+  ): Promise<void> {
+    if (contacts.length === 0) {
+      return;
+    }
+
+    let responseText: string;
+
+    if (contacts.length === 1) {
+      const contact = contacts[0];
+      const openers = ['Encontrei!', 'Achei!', 'Tenho uma indicação!'];
+      const opener = openers[Math.floor(Math.random() * openers.length)];
+
+      responseText = `${opener} *${contact.name}*`;
+
+      if (contact.company) {
+        responseText += ` da *${contact.company}*`;
+      }
+
+      responseText += ` pode te ajudar com *${query}*!\n`;
+
+      if (contact.position) {
+        responseText += `\n💼 ${contact.position}`;
+      }
+
+      if (contact.context) {
+        responseText += `\n\n📝 _${contact.context}_`;
+      }
+
+      if (contact.phone) {
+        responseText += `\n\n📱 ${this.formatPhoneForDisplay(contact.phone)}`;
+      }
+
+      if (contact.email) {
+        responseText += `\n📧 ${contact.email}`;
+      }
+
+      // Envia também como vCard para facilitar
+      if (contact.phone) {
+        await this.evolutionService.sendTextMessage(toPhone, responseText);
+        await this.evolutionService.sendContact(toPhone, {
+          fullName: contact.name,
+          phoneNumber: contact.phone,
+        });
+        return;
+      }
+    } else {
+      // Múltiplos resultados
+      responseText = `🔍 Encontrei ${contacts.length} contatos que podem te ajudar com *${query}*:\n`;
+
+      for (const contact of contacts.slice(0, 3)) {
+        responseText += `\n• *${contact.name}*`;
+        if (contact.company) {
+          responseText += ` - ${contact.company}`;
+        }
+        if (contact.phone) {
+          responseText += `\n  📱 ${this.formatPhoneForDisplay(contact.phone)}`;
+        }
+      }
+
+      if (contacts.length > 3) {
+        responseText += `\n\n_...e mais ${contacts.length - 3} contatos_`;
+      }
     }
 
     await this.evolutionService.sendTextMessage(toPhone, responseText);
@@ -1097,7 +1288,7 @@ export class WhatsappService {
    */
   private formatBridgeMessage(
     connections: { id: string; area: string; connectorName: string; connectorId: string | null }[],
-    query: string
+    query: string,
   ): string {
     // Agrupa por conector (quem pode fazer a ponte)
     const byConnector = new Map<string, string[]>();
@@ -1135,7 +1326,7 @@ export class WhatsappService {
    */
   private formatBridgeMessageWithContact(
     connector: { connectorName: string; connectorPhone: string | null; area: string },
-    query: string
+    query: string,
   ): string {
     let message = `🔗 *${connector.connectorName}* pode te conectar com alguém de *${query}*!\n\n`;
     message += `💼 Área: ${connector.area}\n\n`;
@@ -1255,7 +1446,7 @@ export class WhatsappService {
     fromPhone: string,
     pendingUpdate: { contactId: string; contactName: string },
     content: string,
-    messageId: string
+    messageId: string,
   ) {
     this.logger.log(`Processando atualização para ${pendingUpdate.contactName}: "${content}"`);
 
@@ -1266,7 +1457,7 @@ export class WhatsappService {
       if (!extraction.success || !extraction.data) {
         await this.evolutionService.sendTextMessage(
           fromPhone,
-          `🤔 Não consegui entender as informações. Tente enviar no formato:\n"email: novo@email.com, empresa: Nova Empresa"`
+          `🤔 Não consegui entender as informações. Tente enviar no formato:\n"email: novo@email.com, empresa: Nova Empresa"`,
         );
         return { status: 'extraction_failed' };
       }
@@ -1286,7 +1477,7 @@ export class WhatsappService {
       if (Object.keys(updateData).length === 0) {
         await this.evolutionService.sendTextMessage(
           fromPhone,
-          `🤔 Não encontrei informações para atualizar. O que você quer mudar em *${pendingUpdate.contactName}*?`
+          `🤔 Não encontrei informações para atualizar. O que você quer mudar em *${pendingUpdate.contactName}*?`,
         );
         return { status: 'no_update_data' };
       }
@@ -1295,7 +1486,7 @@ export class WhatsappService {
       const updatedContact = await this.contactsService.update(
         pendingUpdate.contactId,
         userId,
-        updateData
+        updateData,
       );
 
       // Limpa o estado de atualização pendente
@@ -1330,14 +1521,13 @@ export class WhatsappService {
 
       this.logger.log(`Contato ${pendingUpdate.contactName} atualizado com sucesso`);
       return { status: 'updated', contactId: pendingUpdate.contactId };
-
     } catch (error) {
       this.logger.error(`Erro ao processar atualização: ${error.message}`);
       this.clearPendingUpdate(fromPhone);
 
       await this.evolutionService.sendTextMessage(
         fromPhone,
-        `❌ Erro ao atualizar *${pendingUpdate.contactName}*. Tente novamente.`
+        `❌ Erro ao atualizar *${pendingUpdate.contactName}*. Tente novamente.`,
       );
 
       return { status: 'error' };
@@ -1512,9 +1702,13 @@ export class WhatsappService {
 
       if (!currentUser?.phone) return;
 
-      const namesList = otherNames.length === 1
-        ? `*${otherNames[0]}*`
-        : otherNames.slice(0, -1).map((n) => `*${n}*`).join(', ') + ` e *${otherNames[otherNames.length - 1]}*`;
+      const namesList =
+        otherNames.length === 1
+          ? `*${otherNames[0]}*`
+          : otherNames
+              .slice(0, -1)
+              .map((n) => `*${n}*`)
+              .join(', ') + ` e *${otherNames[otherNames.length - 1]}*`;
 
       const message = `🔗 ${namesList} também ${otherNames.length === 1 ? 'conhece' : 'conhecem'} *${contactName}*! Vocês têm conexões em comum.`;
 
@@ -1522,7 +1716,9 @@ export class WhatsappService {
       setTimeout(async () => {
         try {
           await this.evolutionService.sendTextMessage(currentUser.phone!, message);
-          this.logger.log(`Notificação de contato em comum enviada para ${currentUser.phone}: ${message}`);
+          this.logger.log(
+            `Notificação de contato em comum enviada para ${currentUser.phone}: ${message}`,
+          );
         } catch (err) {
           this.logger.error(`Erro ao enviar notificação de contato em comum: ${err.message}`);
         }
@@ -1535,7 +1731,10 @@ export class WhatsappService {
   private async createAndAssignTags(userId: string, contactId: string, tagNames: string[]) {
     for (const tagName of tagNames) {
       try {
-        const slug = tagName.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
+        const slug = tagName
+          .toLowerCase()
+          .replace(/\s+/g, '-')
+          .replace(/[^a-z0-9-]/g, '');
 
         // Busca ou cria a tag
         let tag = await this.prisma.tag.findFirst({
@@ -1555,14 +1754,16 @@ export class WhatsappService {
         }
 
         // Associa a tag ao contato
-        await this.prisma.contactTag.create({
-          data: {
-            contactId,
-            tagId: tag.id,
-          },
-        }).catch(() => {
-          // Ignora se já existir a associação
-        });
+        await this.prisma.contactTag
+          .create({
+            data: {
+              contactId,
+              tagId: tag.id,
+            },
+          })
+          .catch(() => {
+            // Ignora se já existir a associação
+          });
       } catch (error) {
         this.logger.error(`Erro ao criar tag ${tagName}:`, error);
       }
@@ -1627,16 +1828,20 @@ export class WhatsappService {
     return message;
   }
 
-  async createContactFromMessage(messageId: string, userId: string, contactData: {
-    name: string;
-    phone: string;
-    email?: string;
-    company?: string;
-    position?: string;
-    location?: string;
-    notes?: string;
-    tagIds?: string[];
-  }) {
+  async createContactFromMessage(
+    messageId: string,
+    userId: string,
+    contactData: {
+      name: string;
+      phone: string;
+      email?: string;
+      company?: string;
+      position?: string;
+      location?: string;
+      notes?: string;
+      tagIds?: string[];
+    },
+  ) {
     const message = await this.getMessage(messageId, userId);
 
     const contact = await this.contactsService.create(userId, {
