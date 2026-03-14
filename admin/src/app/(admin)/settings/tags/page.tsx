@@ -18,6 +18,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useTags } from '@/hooks/use-tags'
+import { useAuth } from '@/hooks/use-auth'
 
 const PRESET_COLORS = [
   '#ef4444', '#f97316', '#f59e0b', '#eab308',
@@ -27,6 +28,7 @@ const PRESET_COLORS = [
 ]
 
 export default function TagsPage() {
+  const { isAdmin } = useAuth()
   const { tags, isLoading, createTag, isCreating, updateTag, isUpdating, deleteTag, isDeleting } = useTags()
   const [successMessage, setSuccessMessage] = useState<string | null>(null)
   const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -285,8 +287,8 @@ export default function TagsPage() {
             )}
           </div>
 
-          {/* Tags Institucionais */}
-          {institutionalTags.length > 0 && (
+          {/* Tags Institucionais - apenas para admin */}
+          {isAdmin && institutionalTags.length > 0 && (
             <div className="glass-card p-6">
               <h2 className="text-lg font-semibold text-white mb-4 flex items-center gap-2">
                 <Building2 className="h-5 w-5 text-amber-400" />
