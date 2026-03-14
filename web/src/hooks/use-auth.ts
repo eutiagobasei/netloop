@@ -27,8 +27,8 @@ export function useAuth() {
       return data
     },
     onSuccess: async (data) => {
-      Cookies.set('accessToken', data.accessToken, { expires: 1 / 96 })
-      Cookies.set('refreshToken', data.refreshToken, { expires: 7 })
+      Cookies.set('accessToken', data.accessToken, { expires: 1 / 96, path: '/' })
+      Cookies.set('refreshToken', data.refreshToken, { expires: 7, path: '/' })
       await queryClient.invalidateQueries({ queryKey: ['auth', 'me'] })
       router.replace('/network')
     },
