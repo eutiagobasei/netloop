@@ -144,7 +144,7 @@ export class ContactsService {
     const results = await this.prisma.$queryRaw<{ name: string; similarity: number }[]>`
       SELECT name, similarity(name, ${searchName}) as similarity
       FROM contacts
-      WHERE owner_id = ${ownerId}
+      WHERE "ownerId" = ${ownerId}
         AND similarity(name, ${searchName}) >= ${threshold}
         AND similarity(name, ${searchName}) < 1
       ORDER BY similarity(name, ${searchName}) DESC
@@ -850,18 +850,18 @@ export class ContactsService {
         location: string | null;
         notes: string | null;
         context: string | null;
-        owner_id: string;
-        created_at: Date;
-        updated_at: Date;
+        ownerId: string;
+        createdAt: Date;
+        updatedAt: Date;
         similarity: number;
       }>
     >`
       SELECT
         id, name, phone, email, company, position, location, notes, context,
-        owner_id, created_at, updated_at,
+        "ownerId", "createdAt", "updatedAt",
         similarity(name, ${searchName}) as similarity
       FROM contacts
-      WHERE owner_id = ${ownerId}
+      WHERE "ownerId" = ${ownerId}
         AND (
           similarity(name, ${searchName}) > 0.3
           OR name ILIKE ${'%' + searchName + '%'}
