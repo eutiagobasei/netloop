@@ -17,6 +17,7 @@ import {
   Building2,
   Sparkles,
   Tag,
+  Smartphone,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { useAuth } from '@/hooks/use-auth'
@@ -28,6 +29,7 @@ const adminNavigation = [
   { name: 'Usuários', href: '/users', icon: Users },
   { name: 'Grupos', href: '/groups', icon: Building2 },
   { name: 'API Keys', href: '/settings/api-keys', icon: Key },
+  { name: 'WhatsApp', href: '/settings/whatsapp', icon: Smartphone },
   { name: 'Evolution API', href: '/settings/evolution', icon: MessageSquare },
   { name: 'Prompts IA', href: '/settings/prompts', icon: Brain },
 ]
