@@ -46,7 +46,7 @@ export class SettingsController {
   }
 
   @Public()
-  @Get('prompts/defaults')
+  @Get('default-prompts')
   @ApiOperation({ summary: 'Retorna os prompts padrão do sistema' })
   @ApiResponse({ status: 200, description: 'Prompts padrão' })
   async getDefaultPrompts() {
