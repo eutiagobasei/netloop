@@ -8,6 +8,7 @@ import {
   Param,
   Query,
   UseGuards,
+  SetMetadata,
 } from '@nestjs/common';
 import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
 import { SettingCategory } from '@prisma/client';
@@ -18,6 +19,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { Public } from '../auth/decorators/public.decorator';
 import { DEFAULT_PROMPTS } from '../ai/constants/default-prompts';
 
 @ApiTags('Settings')
@@ -43,6 +45,7 @@ export class SettingsController {
     return this.settingsService.getStats();
   }
 
+  @Public()
   @Get('prompts/defaults')
   @ApiOperation({ summary: 'Retorna os prompts padrão do sistema' })
   @ApiResponse({ status: 200, description: 'Prompts padrão' })
