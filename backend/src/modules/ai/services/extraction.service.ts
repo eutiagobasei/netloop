@@ -598,8 +598,8 @@ export class ExtractionService {
     // Substitui placeholders
     systemPrompt = systemPrompt
       .replace(/\{\{name\}\}/g, contact.name || '')
-      .replace(/\{\{company\}\}/g, contact.company || 'não informada')
-      .replace(/\{\{position\}\}/g, contact.position || 'não informado')
+      .replace(/\{\{company\}\}/g, '')
+      .replace(/\{\{position\}\}/g, '')
       .replace(/\{\{phone\}\}/g, contact.phone || 'não informado')
       .replace(/\{\{email\}\}/g, contact.email || 'não informado')
       .replace(/\{\{context\}\}/g, contact.context || 'não informado')

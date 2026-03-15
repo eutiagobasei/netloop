@@ -316,8 +316,6 @@ export class MemoryService {
 
     let response = `*${contact.name}*\n\n`;
 
-    if (contact.position) response += `Cargo: ${contact.position}\n`;
-    if (contact.company) response += `Empresa: ${contact.company}\n`;
     if (contact.phone) response += `Telefone: ${contact.phone}\n`;
     if (contact.email) response += `Email: ${contact.email}\n`;
     if (contact.location) response += `Local: ${contact.location}\n`;

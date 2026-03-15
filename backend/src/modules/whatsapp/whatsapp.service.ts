@@ -1303,15 +1303,7 @@ export class WhatsappService {
 
       responseText = `${opener} *${contact.name}*`;
 
-      if (contact.company) {
-        responseText += ` da *${contact.company}*`;
-      }
-
       responseText += ` pode te ajudar com *${query}*!\n`;
-
-      if (contact.position) {
-        responseText += `\n💼 ${contact.position}`;
-      }
 
       if (contact.context) {
         responseText += `\n\n📝 _${contact.context}_`;
@@ -1340,9 +1332,6 @@ export class WhatsappService {
 
       for (const contact of contacts.slice(0, 3)) {
         responseText += `\n• *${contact.name}*`;
-        if (contact.company) {
-          responseText += ` - ${contact.company}`;
-        }
         if (contact.phone) {
           responseText += `\n  📱 ${this.formatPhoneForDisplay(contact.phone)}`;
         }
@@ -1445,8 +1434,6 @@ export class WhatsappService {
     let message = `📝 *Atualizar: ${contact.name}*\n\n`;
     message += `*Dados atuais:*\n`;
 
-    if (contact.company) message += `🏢 Empresa: ${contact.company}\n`;
-    if (contact.position) message += `💼 Cargo: ${contact.position}\n`;
     if (contact.phone) message += `📱 Telefone: ${contact.phone}\n`;
     if (contact.email) message += `📧 Email: ${contact.email}\n`;
     if (contact.location) message += `📍 Local: ${contact.location}\n`;
@@ -1567,21 +1554,17 @@ export class WhatsappService {
       const updateData: Partial<{
         phone: string;
         email: string;
-        company: string;
-        position: string;
         location: string;
         notes: string;
         context: string;
       }> = {};
 
-      // Tenta extrair dados estruturados (email, telefone, empresa, etc.)
+      // Tenta extrair dados estruturados (email, telefone, etc.)
       const extraction = await this.aiService.extractContactData(trimmedContent);
 
       if (extraction.success && extraction.data) {
         if (extraction.data.phone) updateData.phone = extraction.data.phone;
         if (extraction.data.email) updateData.email = extraction.data.email;
-        if (extraction.data.company) updateData.company = extraction.data.company;
-        if (extraction.data.position) updateData.position = extraction.data.position;
         if (extraction.data.location) updateData.location = extraction.data.location;
         // Não usa extraction.data.context aqui - usamos o texto original como notas se não houver campos estruturados
       }
@@ -1658,8 +1641,6 @@ export class WhatsappService {
       const updatedFields: string[] = [];
       if (updateData.phone) updatedFields.push(`📱 Telefone: ${updateData.phone}`);
       if (updateData.email) updatedFields.push(`📧 Email: ${updateData.email}`);
-      if (updateData.company) updatedFields.push(`🏢 Empresa: ${updateData.company}`);
-      if (updateData.position) updatedFields.push(`💼 Cargo: ${updateData.position}`);
       if (updateData.location) updatedFields.push(`📍 Local: ${updateData.location}`);
       // Para notas, mostra apenas o texto original (não concatenado) para feedback mais limpo
       if (updateData.notes) {
@@ -1777,8 +1758,6 @@ export class WhatsappService {
       name: extractedData.name,
       phone: extractedData.phone || undefined,
       email: extractedData.email || undefined,
-      company: extractedData.company || undefined,
-      position: extractedData.position || undefined,
       location: extractedData.location || undefined,
       notes: extractedData.context || undefined,
       context: transcription,

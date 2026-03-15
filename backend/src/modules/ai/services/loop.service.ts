@@ -164,9 +164,9 @@ export class LoopService {
     return {
       id: contact.id,
       name: contact.name,
-      profession: contact.position || '',
+      profession: '',
       skills: contact.tags?.map((ct) => ct.tag.name) || [],
-      company: contact.company || null,
+      company: null,
       level: 1,
       connected_through: null,
       last_interaction: null,

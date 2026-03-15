@@ -284,8 +284,6 @@ export class ConnectionsService {
             name: ct.tag.name,
             color: ct.tag.color,
           })),
-          company: conn.contact.company,
-          position: conn.contact.position,
           phone: conn.contact.phone,
           email: conn.contact.email,
           context: conn.context, // Contexto da CONEXÃO (como você conhece a pessoa)
