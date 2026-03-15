@@ -1,16 +1,21 @@
 import { Injectable, Logger, NotFoundException, Inject, forwardRef } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
+import * as crypto from 'crypto';
 import { PrismaService } from '@/prisma/prisma.service';
 import { MessageType, Prisma, ApprovalStatus } from '@prisma/client';
 import { ContactsService } from '../contacts/contacts.service';
 import { ConnectionsService } from '../connections/connections.service';
 import { AIService } from '../ai/ai.service';
-import { EvolutionService } from './evolution.service';
 import { RegistrationService } from '../registration/registration.service';
 import { UsersService } from '../users/users.service';
 import { MemoryService } from '../memory/memory.service';
 import { PhoneUtil } from '@/common/utils/phone.util';
 import { parseVCard } from './utils/vcard-parser';
+import {
+  MessagingProviderFactory,
+  IMessagingProvider,
+} from './providers';
+import { MetaWebhookDto } from './dto/meta-webhook.dto';
 
 // Timeout para auto-aprovar (2 minutos)
 const AUTO_APPROVE_TIMEOUT_MS = 2 * 60 * 1000;
@@ -60,12 +65,49 @@ export class WhatsappService {
     private readonly connectionsService: ConnectionsService,
     @Inject(forwardRef(() => AIService))
     private readonly aiService: AIService,
-    private readonly evolutionService: EvolutionService,
+    private readonly providerFactory: MessagingProviderFactory,
     @Inject(forwardRef(() => RegistrationService))
     private readonly registrationService: RegistrationService,
     private readonly usersService: UsersService,
     private readonly memoryService: MemoryService,
   ) {}
+
+  /**
+   * Get the currently configured messaging provider
+   */
+  private async getProvider(): Promise<IMessagingProvider> {
+    return this.providerFactory.getProvider();
+  }
+
+  /**
+   * Send a text message using the configured provider
+   */
+  private async sendTextMessage(toPhone: string, message: string): Promise<boolean> {
+    const provider = await this.getProvider();
+    return provider.sendTextMessage(toPhone, message);
+  }
+
+  /**
+   * Send a contact using the configured provider
+   */
+  private async sendContact(
+    toPhone: string,
+    contact: { fullName: string; phoneNumber: string; organization?: string },
+  ): Promise<boolean> {
+    const provider = await this.getProvider();
+    return provider.sendContact(toPhone, contact);
+  }
+
+  /**
+   * Download media using the configured provider
+   */
+  private async downloadMedia(
+    messageKey: any,
+    type: 'audio' | 'image' | 'video' | 'document',
+  ): Promise<Buffer | null> {
+    const provider = await this.getProvider();
+    return provider.downloadMedia(messageKey, type);
+  }
 
   async handleEvolutionWebhook(payload: any) {
     // Normaliza o evento para lowercase com ponto
@@ -189,7 +231,7 @@ export class WhatsappService {
           );
         } catch (error) {
           this.logger.error(`Erro ao transcrever áudio no registro: ${error.message}`);
-          await this.evolutionService.sendTextMessage(
+          await this.sendTextMessage(
             fromPhone,
             '🎤 Não consegui entender o áudio. Por favor, envie sua resposta por texto.',
           );
@@ -247,7 +289,7 @@ export class WhatsappService {
           );
         } catch (error) {
           this.logger.error(`Erro ao transcrever áudio no registro: ${error.message}`);
-          await this.evolutionService.sendTextMessage(
+          await this.sendTextMessage(
             phone,
             '🎤 Não consegui entender o áudio. Por favor, envie sua resposta por texto.',
           );
@@ -344,7 +386,7 @@ export class WhatsappService {
           }
         } catch (error) {
           this.logger.error(`Erro ao transcrever áudio para contexto: ${error.message}`);
-          await this.evolutionService.sendTextMessage(
+          await this.sendTextMessage(
             fromPhone,
             '🎤 Não consegui entender o áudio. Por favor, envie o contexto por texto.',
           );
@@ -479,7 +521,7 @@ export class WhatsappService {
         },
       });
 
-      await this.evolutionService.sendTextMessage(message.fromPhone, 'Descartado 👍');
+      await this.sendTextMessage(message.fromPhone, 'Descartado 👍');
 
       return { status: 'rejected' };
     }
@@ -496,7 +538,7 @@ export class WhatsappService {
         });
 
         // Pergunta o contexto agora que temos o telefone
-        await this.evolutionService.sendTextMessage(
+        await this.sendTextMessage(
           message.fromPhone,
           `De onde vocês se conhecem?`,
         );
@@ -576,12 +618,10 @@ export class WhatsappService {
     if (!extractedData.phone) {
       this.logger.warn(`Phone ausente para contato: ${extractedData.name}`);
 
-      await this.evolutionService
-        .sendTextMessage(
-          message.fromPhone,
-          `⚠️ Não consegui identificar o telefone de *${extractedData.name}*.\n\nEnvie o número para completar o cadastro.\n_Exemplo: 21987654321_`,
-        )
-        .catch(() => {});
+      await this.sendTextMessage(
+        message.fromPhone,
+        `⚠️ Não consegui identificar o telefone de *${extractedData.name}*.\n\nEnvie o número para completar o cadastro.\n_Exemplo: 21987654321_`,
+      ).catch(() => {});
 
       // Mantém status AWAITING para que a próxima mensagem seja tratada como resposta
       return { status: 'missing_phone' };
@@ -612,7 +652,7 @@ export class WhatsappService {
       }
       confirmMessage += ` 👍`;
 
-      await this.evolutionService.sendTextMessage(message.fromPhone, confirmMessage);
+      await this.sendTextMessage(message.fromPhone, confirmMessage);
 
       // NÃO pergunta mais sobre contexto - já foi perguntado antes de salvar
 
@@ -621,12 +661,10 @@ export class WhatsappService {
       this.logger.error('Erro ao criar contato:', error);
 
       // Notifica o usuário que houve erro (ao invés de silêncio)
-      await this.evolutionService
-        .sendTextMessage(
-          message.fromPhone,
-          `❌ Erro ao salvar contato *${extractedData.name}*. Tente enviar novamente.`,
-        )
-        .catch(() => {}); // Ignora erro do envio
+      await this.sendTextMessage(
+        message.fromPhone,
+        `❌ Erro ao salvar contato *${extractedData.name}*. Tente enviar novamente.`,
+      ).catch(() => {}); // Ignora erro do envio
 
       return { status: 'error' };
     }
@@ -640,7 +678,7 @@ export class WhatsappService {
       try {
         const contextQuestion = `💭 Quer adicionar alguma informação sobre *${contactName}*?\n\n_Exemplo: "Conheci na conferência de tech", "Colega de trabalho na empresa X", "Amigo do João"_\n\n_Responda com o contexto ou ignore para pular._`;
 
-        await this.evolutionService.sendTextMessage(fromPhone, contextQuestion);
+        await this.sendTextMessage(fromPhone, contextQuestion);
 
         // Salva estado de pedido de contexto pendente
         this.setPendingContextRequest(fromPhone, contactId, contactName);
@@ -746,7 +784,7 @@ export class WhatsappService {
       });
 
       // Envia confirmação
-      await this.evolutionService.sendTextMessage(
+      await this.sendTextMessage(
         fromPhone,
         `✨ Contexto adicionado a *${pendingContext.contactName}*! Seu contato agora está mais completo.`,
       );
@@ -756,8 +794,7 @@ export class WhatsappService {
     } catch (error) {
       this.logger.error(`Erro ao adicionar contexto: ${error.message}`);
 
-      await this.evolutionService
-        .sendTextMessage(fromPhone, `❌ Erro ao adicionar contexto. Tente novamente.`)
+      await this.sendTextMessage(fromPhone, `❌ Erro ao adicionar contexto. Tente novamente.`)
         .catch(() => {});
 
       return { status: 'error' };
@@ -832,10 +869,10 @@ export class WhatsappService {
                 `📱 Aqui está o contato de *${pendingIntro.connectorName}* para você pedir a apresentação:\n\n` +
                 `Telefone: ${this.formatPhoneForDisplay(pendingIntro.connectorPhone)}\n\n` +
                 `💡 Dica: Mencione que está procurando alguém de *${pendingIntro.area}*!`;
-              await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
+              await this.sendTextMessage(fromPhone, confirmMessage);
 
               // Envia também como vCard para facilitar salvar
-              await this.evolutionService.sendContact(fromPhone, {
+              await this.sendContact(fromPhone, {
                 fullName: pendingIntro.connectorName,
                 phoneNumber: pendingIntro.connectorPhone,
               });
@@ -843,7 +880,7 @@ export class WhatsappService {
               const confirmMessage =
                 `📱 *${pendingIntro.connectorName}* pode te conectar com alguém de *${pendingIntro.area}*!\n\n` +
                 `Infelizmente não tenho o telefone dele cadastrado. Você conhece ele?`;
-              await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
+              await this.sendTextMessage(fromPhone, confirmMessage);
             }
 
             this.logger.log(
@@ -864,7 +901,7 @@ export class WhatsappService {
             // Usuário recusou
             this.pendingIntroRequests.delete(fromPhone);
 
-            await this.evolutionService.sendTextMessage(
+            await this.sendTextMessage(
               fromPhone,
               'Sem problemas! Se precisar de outra coisa, é só me chamar. 👋',
             );
@@ -941,11 +978,11 @@ export class WhatsappService {
               // Encontrou conexões de 2º grau - envia mensagem e contato do conector
               const connector = secondDegreeResults[0];
               const bridgeMessage = this.formatBridgeMessageWithContact(connector, querySubject);
-              await this.evolutionService.sendTextMessage(fromPhone, bridgeMessage);
+              await this.sendTextMessage(fromPhone, bridgeMessage);
 
               // Envia o contato do conector como vCard
               if (connector.connectorPhone) {
-                await this.evolutionService.sendContact(fromPhone, {
+                await this.sendContact(fromPhone, {
                   fullName: connector.connectorName,
                   phoneNumber: connector.connectorPhone,
                 });
@@ -976,7 +1013,7 @@ export class WhatsappService {
           await this.sendSearchResponse(fromPhone, searchResult);
         } else {
           // Não conseguiu extrair o assunto, responde pedindo mais detalhes
-          await this.evolutionService.sendTextMessage(
+          await this.sendTextMessage(
             fromPhone,
             '🤔 Não entendi sobre quem você quer saber. Pode me dizer o nome da pessoa?',
           );
@@ -1017,14 +1054,14 @@ export class WhatsappService {
             await this.sendUpdatePrompt(fromPhone, existingContact);
           } else {
             // Não encontrou - pergunta qual contato
-            await this.evolutionService.sendTextMessage(
+            await this.sendTextMessage(
               fromPhone,
               `🤔 Não encontrei *${contactName}* na sua rede.\n\nQual contato você quer atualizar?`,
             );
           }
         } else {
           // Não conseguiu extrair o nome
-          await this.evolutionService.sendTextMessage(
+          await this.sendTextMessage(
             fromPhone,
             '🤔 Não entendi qual contato você quer atualizar. Pode me dizer o nome da pessoa?',
           );
@@ -1059,7 +1096,7 @@ export class WhatsappService {
           },
         });
 
-        await this.evolutionService.sendTextMessage(
+        await this.sendTextMessage(
           fromPhone,
           '📝 Ótimo! Para cadastrar um novo contato, me envie os dados:\n\n' +
             '*Nome completo* e *telefone* (obrigatórios)\n' +
@@ -1087,7 +1124,7 @@ export class WhatsappService {
           },
         });
 
-        await this.evolutionService.sendTextMessage(fromPhone, result.response);
+        await this.sendTextMessage(fromPhone, result.response);
 
         this.logger.log(`[Memory] Processado: ${result.action}`);
         return;
@@ -1119,7 +1156,7 @@ export class WhatsappService {
           this.scheduleAutoApproval(messageId, fromPhone);
         } else {
           // Dados insuficientes para criar contato
-          await this.evolutionService.sendTextMessage(
+          await this.sendTextMessage(
             fromPhone,
             '🤔 Não consegui identificar os dados do contato. ' +
               'Pode me informar o *nome completo* e *telefone* da pessoa?',
@@ -1149,13 +1186,13 @@ export class WhatsappService {
         const greetingResponse = await this.aiService.generateGreetingResponse(user?.name);
         this.logger.log(`Resposta gerada: ${greetingResponse.substring(0, 50)}...`);
 
-        await this.evolutionService.sendTextMessage(fromPhone, greetingResponse);
+        await this.sendTextMessage(fromPhone, greetingResponse);
         this.logger.log(`Mensagem ${messageId} respondida com saudação IA`);
       } catch (greetingError) {
         this.logger.error(`Erro ao enviar saudação para ${fromPhone}:`, greetingError);
         // Fallback: tenta enviar mensagem simples
         try {
-          await this.evolutionService.sendTextMessage(
+          await this.sendTextMessage(
             fromPhone,
             'Olá! Como posso ajudar você hoje?',
           );
@@ -1205,7 +1242,7 @@ export class WhatsappService {
       responseText = result.message;
     }
 
-    await this.evolutionService.sendTextMessage(toPhone, responseText);
+    await this.sendTextMessage(toPhone, responseText);
   }
 
   /**
@@ -1253,8 +1290,8 @@ export class WhatsappService {
 
       // Envia também como vCard para facilitar
       if (contact.phone) {
-        await this.evolutionService.sendTextMessage(toPhone, responseText);
-        await this.evolutionService.sendContact(toPhone, {
+        await this.sendTextMessage(toPhone, responseText);
+        await this.sendContact(toPhone, {
           fullName: contact.name,
           phoneNumber: contact.phone,
         });
@@ -1279,7 +1316,7 @@ export class WhatsappService {
       }
     }
 
-    await this.evolutionService.sendTextMessage(toPhone, responseText);
+    await this.sendTextMessage(toPhone, responseText);
   }
 
   /**
@@ -1393,7 +1430,7 @@ export class WhatsappService {
     message += `✏️ Envie as informações que quer atualizar\n`;
     message += `_Exemplo: "email: novo@email.com, empresa: Nova Empresa"_`;
 
-    await this.evolutionService.sendTextMessage(toPhone, message);
+    await this.sendTextMessage(toPhone, message);
   }
 
   // ============================================
@@ -1407,7 +1444,7 @@ export class WhatsappService {
     this.logger.log(`Baixando áudio via Evolution API...`);
 
     // Baixa o áudio descriptografado via Evolution API
-    const audioBuffer = await this.evolutionService.downloadMedia(messageKey, 'audio');
+    const audioBuffer = await this.downloadMedia(messageKey, 'audio');
 
     if (!audioBuffer) {
       throw new Error('Falha ao baixar áudio via Evolution API');
@@ -1479,7 +1516,7 @@ export class WhatsappService {
       const extraction = await this.aiService.extractContactData(content);
 
       if (!extraction.success || !extraction.data) {
-        await this.evolutionService.sendTextMessage(
+        await this.sendTextMessage(
           fromPhone,
           `🤔 Não consegui entender as informações. Tente enviar no formato:\n"email: novo@email.com, empresa: Nova Empresa"`,
         );
@@ -1499,7 +1536,7 @@ export class WhatsappService {
       // A não ser que o usuário tenha explicitamente pedido para mudar o nome
 
       if (Object.keys(updateData).length === 0) {
-        await this.evolutionService.sendTextMessage(
+        await this.sendTextMessage(
           fromPhone,
           `🤔 Não encontrei informações para atualizar. O que você quer mudar em *${pendingUpdate.contactName}*?`,
         );
@@ -1541,7 +1578,7 @@ export class WhatsappService {
       if (updateData.notes) updatedFields.push(`📝 Notas: ${updateData.notes}`);
 
       const confirmMessage = `✅ *${pendingUpdate.contactName}* atualizado!\n\n${updatedFields.join('\n')}`;
-      await this.evolutionService.sendTextMessage(fromPhone, confirmMessage);
+      await this.sendTextMessage(fromPhone, confirmMessage);
 
       this.logger.log(`Contato ${pendingUpdate.contactName} atualizado com sucesso`);
       return { status: 'updated', contactId: pendingUpdate.contactId };
@@ -1549,7 +1586,7 @@ export class WhatsappService {
       this.logger.error(`Erro ao processar atualização: ${error.message}`);
       this.clearPendingUpdate(fromPhone);
 
-      await this.evolutionService.sendTextMessage(
+      await this.sendTextMessage(
         fromPhone,
         `❌ Erro ao atualizar *${pendingUpdate.contactName}*. Tente novamente.`,
       );
@@ -1566,7 +1603,7 @@ export class WhatsappService {
     const summary = this.formatContactSummary(extractedData, tagNames);
 
     // Envia a mensagem de aprovação
-    const sent = await this.evolutionService.sendTextMessage(toPhone, summary);
+    const sent = await this.sendTextMessage(toPhone, summary);
 
     if (sent) {
       await this.prisma.whatsappMessage.update({
@@ -1739,7 +1776,7 @@ export class WhatsappService {
       // Delay de 3s para não conflitar com a mensagem de confirmação
       setTimeout(async () => {
         try {
-          await this.evolutionService.sendTextMessage(currentUser.phone!, message);
+          await this.sendTextMessage(currentUser.phone!, message);
           this.logger.log(
             `Notificação de contato em comum enviada para ${currentUser.phone}: ${message}`,
           );
@@ -1885,7 +1922,268 @@ export class WhatsappService {
       return true;
     }
 
-    return true;
+    const expectedSignature = crypto
+      .createHmac('sha256', secret)
+      .update(body)
+      .digest('hex');
+
+    if (signature.length !== expectedSignature.length) {
+      return false;
+    }
+
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(signature),
+        Buffer.from(expectedSignature),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  // ============================================
+  // META CLOUD API WEBHOOK HANDLERS
+  // ============================================
+
+  /**
+   * Verify Meta webhook signature using HMAC-SHA256
+   */
+  verifyMetaSignature(signature: string, rawBody: Buffer): boolean {
+    const appSecret = this.configService.get<string>('META_APP_SECRET');
+
+    if (!appSecret) {
+      this.logger.warn('META_APP_SECRET not configured, skipping signature verification');
+      return true;
+    }
+
+    const expectedSignature = crypto
+      .createHmac('sha256', appSecret)
+      .update(rawBody)
+      .digest('hex');
+
+    const providedSignature = signature.replace('sha256=', '');
+
+    // Prevent timing attack and handle different lengths
+    if (expectedSignature.length !== providedSignature.length) {
+      return false;
+    }
+
+    try {
+      return crypto.timingSafeEqual(
+        Buffer.from(expectedSignature),
+        Buffer.from(providedSignature),
+      );
+    } catch {
+      return false;
+    }
+  }
+
+  /**
+   * Handle incoming Meta Cloud API webhook
+   */
+  async handleMetaWebhook(payload: MetaWebhookDto) {
+    // Verify this is a WhatsApp Business Account event
+    if (payload.object !== 'whatsapp_business_account') {
+      this.logger.log(`[Meta] Ignored non-WhatsApp event: ${payload.object}`);
+      return { status: 'ignored', reason: 'not whatsapp_business_account' };
+    }
+
+    const results: any[] = [];
+
+    for (const entry of payload.entry) {
+      for (const change of entry.changes) {
+        if (change.field !== 'messages') {
+          this.logger.log(`[Meta] Ignored field: ${change.field}`);
+          continue;
+        }
+
+        const value = change.value;
+
+        // Handle message statuses (sent, delivered, read)
+        if (value.statuses && value.statuses.length > 0) {
+          for (const status of value.statuses) {
+            this.logger.log(
+              `[Meta] Status update: ${status.id} -> ${status.status}`,
+            );
+            // Could update message status in database if needed
+          }
+          continue;
+        }
+
+        // Handle incoming messages
+        if (value.messages && value.messages.length > 0) {
+          for (const message of value.messages) {
+            const result = await this.processMetaMessage(message, value);
+            results.push(result);
+          }
+        }
+      }
+    }
+
+    return { status: 'processed', results };
+  }
+
+  /**
+   * Process a single Meta webhook message
+   */
+  private async processMetaMessage(
+    message: any,
+    value: any,
+  ): Promise<any> {
+    const messageId = message.id;
+    const fromPhone = message.from;
+    const timestamp = message.timestamp;
+    const type = message.type;
+
+    this.logger.log(
+      `[Meta] Processing message: id=${messageId}, from=${fromPhone}, type=${type}`,
+    );
+
+    // Check for duplicate
+    const existing = await this.prisma.whatsappMessage.findUnique({
+      where: { externalId: messageId },
+    });
+
+    if (existing) {
+      this.logger.log(`[Meta] Message ${messageId} already processed`);
+      return { status: 'already_processed', messageId };
+    }
+
+    // Extract pushName from contacts if available
+    const pushName = value.contacts?.[0]?.profile?.name || '';
+
+    // Extract message content based on type
+    let content: string | null = null;
+    let audioUrl: string | undefined;
+    let messageType: MessageType = MessageType.TEXT;
+    let vcardData: any = null;
+    let mediaId: string | null = null;
+
+    switch (type) {
+      case 'text':
+        content = message.text?.body || null;
+        messageType = MessageType.TEXT;
+        break;
+
+      case 'audio':
+        messageType = MessageType.AUDIO;
+        mediaId = message.audio?.id;
+        break;
+
+      case 'image':
+        messageType = MessageType.IMAGE;
+        mediaId = message.image?.id;
+        content = message.image?.caption || null;
+        break;
+
+      case 'video':
+        // Map to IMAGE since VIDEO not in schema
+        messageType = MessageType.IMAGE;
+        mediaId = message.video?.id;
+        content = message.video?.caption || null;
+        break;
+
+      case 'document':
+        // Map to TEXT since DOCUMENT not in schema
+        messageType = MessageType.TEXT;
+        mediaId = message.document?.id;
+        content = message.document?.filename || null;
+        break;
+
+      case 'contacts':
+        messageType = MessageType.CONTACT;
+        if (message.contacts && message.contacts.length > 0) {
+          const contact = message.contacts[0];
+          vcardData = {
+            name: contact.name?.formatted_name || '',
+            phone: contact.phones?.[0]?.phone || null,
+            email: null,
+            company: null,
+          };
+          content = `Contato compartilhado: ${vcardData.name}`;
+        }
+        break;
+
+      default:
+        this.logger.warn(`[Meta] Unsupported message type: ${type}`);
+        return { status: 'ignored', reason: `unsupported type: ${type}` };
+    }
+
+    // Create messageKey for media download (Meta format)
+    const messageKey = mediaId ? { mediaId } : undefined;
+
+    // Check if phone belongs to a registered user
+    const user = await this.usersService.findByPhone(fromPhone);
+
+    if (!user) {
+      // Unknown user - handle registration flow
+      return this.handleUnknownUser(fromPhone, content, audioUrl, messageType, messageKey);
+    }
+
+    // Check for active registration flow
+    const activeFlow = await this.registrationService.getActiveFlow(fromPhone);
+    if (activeFlow) {
+      let messageContent = content;
+
+      // If audio, transcribe first
+      if (messageType === MessageType.AUDIO && messageKey) {
+        try {
+          messageContent = await this.transcribeAudioFromMeta(messageKey);
+          this.logger.log(
+            `[Meta] Audio transcribed in registration: ${messageContent?.substring(0, 50)}...`,
+          );
+        } catch (error) {
+          this.logger.error(`[Meta] Error transcribing audio: ${error.message}`);
+          await this.sendTextMessage(
+            fromPhone,
+            '🎤 Não consegui entender o áudio. Por favor, envie sua resposta por texto.',
+          );
+          return { status: 'audio_transcription_failed' };
+        }
+      }
+
+      if (messageContent) {
+        const result = await this.registrationService.processFlowResponse(
+          fromPhone,
+          messageContent,
+        );
+        if (result.completed) {
+          return { status: 'registration_completed', userId: result.userId };
+        }
+      }
+      return { status: 'registration_in_progress' };
+    }
+
+    // Registered user - process message normally
+    return this.processUserMessage(
+      user.id,
+      fromPhone,
+      pushName,
+      content,
+      audioUrl,
+      messageType,
+      messageId,
+      messageKey,
+      vcardData,
+    );
+  }
+
+  /**
+   * Transcribe audio from Meta webhook (downloads via Meta API then transcribes)
+   */
+  private async transcribeAudioFromMeta(messageKey: { mediaId: string }): Promise<string> {
+    this.logger.log(`[Meta] Downloading audio: ${messageKey.mediaId}`);
+
+    const audioBuffer = await this.downloadMedia(messageKey, 'audio');
+
+    if (!audioBuffer) {
+      throw new Error('Failed to download audio from Meta API');
+    }
+
+    this.logger.log(`[Meta] Audio downloaded: ${audioBuffer.length} bytes. Transcribing...`);
+
+    const transcription = await this.aiService.transcribeFromBuffer(audioBuffer);
+    return transcription;
   }
 
   /**
@@ -1907,7 +2205,7 @@ export class WhatsappService {
       `Entre em contato com o administrador do grupo para renovar sua participação.`;
 
     try {
-      const sent = await this.evolutionService.sendTextMessage(phone, message);
+      const sent = await this.sendTextMessage(phone, message);
 
       if (sent) {
         this.logger.log(
