@@ -8,6 +8,7 @@ import { AIModule } from '../ai/ai.module';
 import { SettingsModule } from '../settings/settings.module';
 import { RegistrationModule } from '../registration/registration.module';
 import { UsersModule } from '../users/users.module';
+import { MemoryModule } from '../memory/memory.module';
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { UsersModule } from '../users/users.module';
     SettingsModule,
     forwardRef(() => RegistrationModule),
     UsersModule,
+    MemoryModule,
   ],
   controllers: [WhatsappController],
   providers: [WhatsappService, EvolutionService],

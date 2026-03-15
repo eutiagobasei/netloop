@@ -8,6 +8,7 @@ import { AIService } from '../ai/ai.service';
 import { EvolutionService } from './evolution.service';
 import { RegistrationService } from '../registration/registration.service';
 import { UsersService } from '../users/users.service';
+import { MemoryService } from '../memory/memory.service';
 import { PhoneUtil } from '@/common/utils/phone.util';
 import { parseVCard } from './utils/vcard-parser';
 
@@ -63,6 +64,7 @@ export class WhatsappService {
     @Inject(forwardRef(() => RegistrationService))
     private readonly registrationService: RegistrationService,
     private readonly usersService: UsersService,
+    private readonly memoryService: MemoryService,
   ) {}
 
   async handleEvolutionWebhook(payload: any) {
@@ -1066,6 +1068,28 @@ export class WhatsappService {
         );
 
         this.logger.log(`Register intent processado para ${messageId}`);
+        return;
+      }
+
+      // 3.6. SE FOR MEMORY → editar próprios dados ou consultar memória
+      if (intent === 'memory') {
+        this.logger.log(`[Memory] Processando pedido de memória: ${messageId}`);
+
+        const result = await this.memoryService.processMemoryRequest(message.userId, transcription);
+
+        await this.prisma.whatsappMessage.update({
+          where: { id: messageId },
+          data: {
+            transcription,
+            processed: true,
+            processedAt: new Date(),
+            approvalStatus: 'APPROVED',
+          },
+        });
+
+        await this.evolutionService.sendTextMessage(fromPhone, result.response);
+
+        this.logger.log(`[Memory] Processado: ${result.action}`);
         return;
       }
 

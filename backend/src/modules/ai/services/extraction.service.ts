@@ -8,20 +8,32 @@ export type MessageIntent =
   | 'query'
   | 'contact_info'
   | 'update_contact'
+  | 'memory'
   | 'register_intent'
   | 'other';
 
 export interface RegistrationResponseParams {
   userMessage: string;
   conversationHistory: Array<{ role: string; content: string }>;
-  extractedData: { name?: string; email?: string; phoneConfirmed?: boolean };
+  extractedData: {
+    name?: string;
+    email?: string;
+    phoneConfirmed?: boolean;
+    objective?: string;
+  };
   phoneFormatted?: string;
 }
 
 export interface RegistrationResponseResult {
   response: string;
-  extracted: { name?: string; email?: string; phoneConfirmed?: boolean };
+  extracted: {
+    name?: string;
+    email?: string;
+    phoneConfirmed?: boolean;
+    objective?: string;
+  };
   isComplete: boolean;
+  nextAction?: 'ask_name' | 'ask_email' | 'ask_objective' | 'complete' | 'continue_chat';
 }
 
 @Injectable()
@@ -158,6 +170,7 @@ export class ExtractionService {
         'query',
         'contact_info',
         'update_contact',
+        'memory',
         'register_intent',
         'other',
       ].includes(intent || '')
@@ -287,35 +300,47 @@ export class ExtractionService {
   }
 
   /**
-   * Gera resposta conversacional para o fluxo de registro
-   * e extrai nome/email da conversa de forma natural
-   * Agora inclui confirmação de telefone antes de pedir email
+   * Gera resposta conversacional para o fluxo de onboarding SDR
+   * Conversa natural para coletar nome/email e entender objetivo do lead
    */
   async generateRegistrationResponse(
     params: RegistrationResponseParams,
   ): Promise<RegistrationResponseResult> {
     const { userMessage, conversationHistory, extractedData, phoneFormatted } = params;
 
-    this.logger.log(`Gerando resposta de registro. Dados atuais: ${JSON.stringify(extractedData)}`);
+    this.logger.log(
+      `[Onboarding] Gerando resposta. Dados atuais: ${JSON.stringify(extractedData)}`,
+    );
 
     const client = await this.openaiService.getClient();
 
     // Busca prompt do banco e substitui placeholders
     let systemPrompt = await this.getPrompt('registration_response');
 
+    // Formata histórico da conversa para contexto
+    const historyText =
+      conversationHistory.length > 0
+        ? conversationHistory
+            .map((m) => `${m.role === 'user' ? 'Lead' : 'Loop'}: ${m.content}`)
+            .join('\n')
+        : 'Primeira mensagem do lead';
+
     // Substitui placeholders com valores atuais
     systemPrompt = systemPrompt
+      .replace(/\{\{conversationHistory\}\}/g, historyText)
       .replace(/\{\{name\}\}/g, extractedData.name || 'NÃO COLETADO')
-      .replace(/\{\{phoneConfirmed\}\}/g, extractedData.phoneConfirmed ? 'SIM' : 'NÃO')
-      .replace(/\{\{phoneFormatted\}\}/g, phoneFormatted || 'NÃO DISPONÍVEL')
-      .replace(/\{\{email\}\}/g, extractedData.email || 'NÃO COLETADO');
+      .replace(/\{\{phoneConfirmed\}\}/g, 'SIM') // Sempre confirmado via WhatsApp
+      .replace(/\{\{phoneFormatted\}\}/g, phoneFormatted || 'detectado do WhatsApp')
+      .replace(/\{\{email\}\}/g, extractedData.email || 'NÃO COLETADO')
+      .replace(/\{\{objective\}\}/g, extractedData.objective || 'NÃO IDENTIFICADO');
 
     const messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }> = [
       { role: 'system', content: systemPrompt },
     ];
 
-    // Adiciona histórico da conversa
-    for (const msg of conversationHistory) {
+    // Adiciona histórico da conversa (últimas 6 mensagens para não sobrecarregar)
+    const recentHistory = conversationHistory.slice(-6);
+    for (const msg of recentHistory) {
       messages.push({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
@@ -342,57 +367,65 @@ export class ExtractionService {
 
       const result = JSON.parse(content);
 
-      // Mescla dados extraídos com os existentes
+      // Mescla dados extraídos com os existentes (prioriza novos dados)
       const mergedData = {
         name: result.extracted?.name || extractedData.name || undefined,
         email: result.extracted?.email || extractedData.email || undefined,
-        phoneConfirmed: result.extracted?.phoneConfirmed || extractedData.phoneConfirmed || false,
+        phoneConfirmed: true, // Sempre true via WhatsApp
+        objective: result.extracted?.objective || extractedData.objective || undefined,
       };
 
-      // Valida email se extraído
+      // Valida e normaliza email se extraído
       if (mergedData.email) {
+        const emailLower = mergedData.email.toLowerCase().trim();
         const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-        if (!emailRegex.test(mergedData.email)) {
+        if (!emailRegex.test(emailLower)) {
           mergedData.email = undefined;
+        } else {
+          mergedData.email = emailLower;
         }
       }
 
-      // Verifica se está completo (tem nome, telefone confirmado e email válido)
-      const isComplete = !!(mergedData.name && mergedData.phoneConfirmed && mergedData.email);
+      // Verifica se está completo (tem nome e email válido)
+      const isComplete = !!(mergedData.name && mergedData.email);
 
       this.logger.log(
-        `Resposta gerada. Dados extraídos: ${JSON.stringify(mergedData)}, completo: ${isComplete}`,
+        `[Onboarding] Resposta gerada. Dados: ${JSON.stringify(mergedData)}, completo: ${isComplete}`,
       );
 
       return {
-        response: result.response || 'Oi! Como posso te ajudar com o cadastro?',
+        response: result.response || 'Oi! Sou o Loop, seu assistente de networking 🧠',
         extracted: mergedData,
         isComplete,
+        nextAction: result.nextAction || 'continue_chat',
       };
     } catch (error) {
-      this.logger.error(`Erro ao gerar resposta de registro: ${error.message}`);
+      this.logger.error(`[Onboarding] Erro ao gerar resposta: ${error.message}`);
 
-      // Fallback para resposta genérica
+      // Fallback conversacional
       if (!extractedData.name) {
         return {
-          response: 'Oi! Sou o assistente do NetLoop. Como posso te chamar?',
-          extracted: {},
+          response: 'Oi! Sou o Loop, seu assistente de networking 🧠 Como posso te chamar?',
+          extracted: { phoneConfirmed: true },
           isComplete: false,
+          nextAction: 'ask_name',
         };
       }
 
       if (!extractedData.email) {
         return {
-          response: `Oi, ${extractedData.name}! Me passa seu email pra finalizar o cadastro?`,
-          extracted: { name: extractedData.name },
+          response: `Prazer, ${extractedData.name}! Me passa seu email pra criar seu acesso?`,
+          extracted: { name: extractedData.name, phoneConfirmed: true },
           isComplete: false,
+          nextAction: 'ask_email',
         };
       }
 
       return {
         response: 'Desculpa, tive um problema. Pode repetir?',
-        extracted: extractedData,
+        extracted: { ...extractedData, phoneConfirmed: true },
         isComplete: false,
+        nextAction: 'continue_chat',
       };
     }
   }

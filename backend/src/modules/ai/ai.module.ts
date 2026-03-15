@@ -20,6 +20,6 @@ import { ContactsModule } from '../contacts/contacts.module';
     EmbeddingService,
     LoopService,
   ],
-  exports: [AIService, ExtractionService, EmbeddingService, LoopService],
+  exports: [AIService, OpenAIService, ExtractionService, EmbeddingService, LoopService],
 })
 export class AIModule {}

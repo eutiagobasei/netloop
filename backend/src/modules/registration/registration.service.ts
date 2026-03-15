@@ -22,6 +22,7 @@ interface ExtractedRegistrationData {
   name?: string;
   email?: string;
   phoneConfirmed?: boolean;
+  objective?: string;
 }
 
 @Injectable()
@@ -148,7 +149,7 @@ export class RegistrationService {
       newExtractedData = extractedData;
       isComplete = false;
     } else {
-      // Usa IA para gerar resposta conversacional
+      // Usa IA para gerar resposta conversacional (onboarding SDR)
       const result = await this.extractionService.generateRegistrationResponse({
         userMessage: message,
         conversationHistory: history,
@@ -160,18 +161,14 @@ export class RegistrationService {
       newExtractedData = {
         name: result.extracted.name || extractedData.name,
         email: result.extracted.email || extractedData.email,
-        phoneConfirmed: result.extracted.phoneConfirmed || extractedData.phoneConfirmed,
+        phoneConfirmed: result.extracted.phoneConfirmed ?? true, // Sempre true via WhatsApp
+        objective: result.extracted.objective || extractedData.objective,
       };
       isComplete = result.isComplete;
     }
 
-    // Se registro está completo, cria o usuário
-    if (
-      isComplete &&
-      newExtractedData.name &&
-      newExtractedData.phoneConfirmed &&
-      newExtractedData.email
-    ) {
+    // Se registro está completo, cria o usuário (nome + email é suficiente, telefone vem do WhatsApp)
+    if (isComplete && newExtractedData.name && newExtractedData.email) {
       // Normaliza telefone antes de salvar
       const normalizedPhone = PhoneUtil.normalize(phone) || phone.replace(/\D/g, '');
       return this.completeRegistration(
