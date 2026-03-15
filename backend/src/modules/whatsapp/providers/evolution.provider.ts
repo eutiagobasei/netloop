@@ -168,11 +168,7 @@ export class EvolutionProvider implements IMessagingProvider {
   /**
    * Send a video message via Evolution API
    */
-  async sendVideoMessage(
-    toPhone: string,
-    videoPath: string,
-    caption?: string,
-  ): Promise<boolean> {
+  async sendVideoMessage(toPhone: string, videoPath: string, caption?: string): Promise<boolean> {
     try {
       const { apiUrl, apiKey, instanceName } = await this.getCredentials();
 
@@ -281,10 +277,7 @@ export class EvolutionProvider implements IMessagingProvider {
    * Download media via Evolution API
    * Uses getBase64FromMediaMessage endpoint to get decrypted media
    */
-  async downloadMedia(
-    messageKey: MessageKeyPayload,
-    type: MediaType,
-  ): Promise<Buffer | null> {
+  async downloadMedia(messageKey: MessageKeyPayload, type: MediaType): Promise<Buffer | null> {
     try {
       const { apiUrl, apiKey, instanceName } = await this.getCredentials();
 
@@ -317,9 +310,7 @@ export class EvolutionProvider implements IMessagingProvider {
 
       const data = await response.json();
 
-      this.logger.log(
-        `[Evolution] Download response: ${JSON.stringify(data).substring(0, 200)}`,
-      );
+      this.logger.log(`[Evolution] Download response: ${JSON.stringify(data).substring(0, 200)}`);
 
       // Evolution may return base64 directly or inside an object
       const base64Content = data.base64 || data.data?.base64 || data.mediaMessage?.base64;

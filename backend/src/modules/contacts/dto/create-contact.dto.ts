@@ -31,16 +31,6 @@ export class CreateContactDto {
   @IsEmail()
   email?: string;
 
-  @ApiProperty({ example: 'Tech Corp', required: false })
-  @IsOptional()
-  @IsString()
-  company?: string;
-
-  @ApiProperty({ example: 'CTO', required: false })
-  @IsOptional()
-  @IsString()
-  position?: string;
-
   @ApiProperty({ example: 'São Paulo, SP', required: false })
   @IsOptional()
   @IsString()
@@ -51,7 +41,11 @@ export class CreateContactDto {
   @IsString()
   notes?: string;
 
-  @ApiProperty({ example: 'Especialista em cloud computing', required: false })
+  @ApiProperty({
+    example: 'CTO da Tech Corp, especialista em cloud computing, conheceu na SIPAT 2024',
+    required: false,
+    description: 'Contexto completo sobre o contato (empresa, cargo, como se conheceram, etc.)',
+  })
   @IsOptional()
   @IsString()
   context?: string;

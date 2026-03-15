@@ -57,15 +57,10 @@ export class EmbeddingService {
       throw new Error('Contato não encontrado');
     }
 
-    // Monta o texto para embedding
-    const textParts = [
-      contact.name,
-      contact.company,
-      contact.position,
-      contact.location,
-      contact.context,
-      contact.notes,
-    ].filter(Boolean);
+    // Monta o texto para embedding - simplificado para name + context
+    const textParts = [contact.name, contact.context, contact.notes, contact.location].filter(
+      Boolean,
+    );
 
     if (textParts.length === 0) {
       this.logger.warn(`Contato ${contactId} não tem dados suficientes para embedding`);
@@ -97,15 +92,13 @@ export class EmbeddingService {
       SELECT
         id,
         name,
-        company,
-        position,
         location,
         context,
         phone,
         email,
         1 - (embedding <=> $1::vector) as similarity
       FROM contacts
-      WHERE owner_id = $2
+      WHERE "ownerId" = $2
         AND embedding IS NOT NULL
       ORDER BY embedding <=> $1::vector
       LIMIT $3

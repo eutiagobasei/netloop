@@ -88,5 +88,4 @@ export class SettingsController {
   async testEvolutionConnection() {
     return this.settingsService.testEvolutionConnection();
   }
-
 }

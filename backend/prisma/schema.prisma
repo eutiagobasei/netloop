@@ -123,11 +123,9 @@ model Contact {
   name        String
   phone       String?
   email       String?
-  company     String?
-  position    String?
   location    String?
   notes       String?  @db.Text
-  context     String?  @db.Text  // Contexto extraído pela IA
+  context     String?  @db.Text  // Contexto extraído pela IA (principal campo para busca)
   rawTranscription String? @db.Text // Transcrição original do áudio
   embedding   Unsupported("vector(1536)")? // Embedding para busca semântica
   createdAt   DateTime @default(now())

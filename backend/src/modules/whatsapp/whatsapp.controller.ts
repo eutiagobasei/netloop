@@ -134,10 +134,7 @@ export class WhatsappController {
 
     // Verify signature if configured
     if (signature && req.rawBody) {
-      const isValid = this.whatsappService.verifyMetaSignature(
-        signature,
-        req.rawBody,
-      );
+      const isValid = this.whatsappService.verifyMetaSignature(signature, req.rawBody);
       if (!isValid) {
         this.logger.warn('Meta webhook signature verification failed');
         throw new ForbiddenException('Invalid signature');

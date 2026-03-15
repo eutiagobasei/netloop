@@ -153,11 +153,7 @@ export class MetaCloudProvider implements IMessagingProvider {
   /**
    * Send a video message via Meta Cloud API
    */
-  async sendVideoMessage(
-    toPhone: string,
-    videoPath: string,
-    caption?: string,
-  ): Promise<boolean> {
+  async sendVideoMessage(toPhone: string, videoPath: string, caption?: string): Promise<boolean> {
     try {
       const { phoneNumberId, accessToken, apiVersion } = await this.getCredentials();
 
@@ -291,10 +287,7 @@ export class MetaCloudProvider implements IMessagingProvider {
    * 1. GET the media URL from mediaId
    * 2. GET the actual file from the URL
    */
-  async downloadMedia(
-    messageKey: MessageKeyPayload,
-    type: MediaType,
-  ): Promise<Buffer | null> {
+  async downloadMedia(messageKey: MessageKeyPayload, type: MediaType): Promise<Buffer | null> {
     try {
       const { accessToken, apiVersion } = await this.getCredentials();
 
@@ -312,14 +305,11 @@ export class MetaCloudProvider implements IMessagingProvider {
       this.logger.log(`[Meta] Downloading media ${mediaId} (type: ${type})`);
 
       // Step 1: Get media URL
-      const mediaResponse = await fetch(
-        `https://graph.facebook.com/${apiVersion}/${mediaId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`,
-          },
+      const mediaResponse = await fetch(`https://graph.facebook.com/${apiVersion}/${mediaId}`, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
         },
-      );
+      });
 
       if (!mediaResponse.ok) {
         const error = await mediaResponse.text();

@@ -28,8 +28,6 @@ export interface SearchResult {
 interface ContactWithSimilarity {
   id: string;
   name: string;
-  company: string | null;
-  position: string | null;
   location: string | null;
   context: string | null;
   phone: string | null;
@@ -201,8 +199,8 @@ export class ContactsService {
     // Gerar embedding de forma assíncrona (não bloqueia a resposta)
     this.generateEmbeddingForContact(contact.id, contactData);
 
-    // Extrair e atribuir tags automaticamente se tiver contexto/cargo/empresa
-    if (contactData.context || contactData.company || contactData.position) {
+    // Extrair e atribuir tags automaticamente se tiver contexto
+    if (contactData.context) {
       this.extractAndAssignTags(ownerId, contact.id, contactData).catch((err) =>
         this.logger.error(`Erro ao extrair tags: ${err.message}`),
       );
@@ -216,6 +214,7 @@ export class ContactsService {
 
   /**
    * Gera embedding para um contato de forma assíncrona
+   * Usa apenas name + context como base para busca semântica
    */
   private async generateEmbeddingForContact(
     contactId: string,
@@ -228,14 +227,12 @@ export class ContactsService {
         return;
       }
 
-      // Concatena informações relevantes para o embedding
+      // Concatena informações relevantes para o embedding - simplificado para name + context
       const textParts = [
         contactData.name,
-        contactData.company,
-        contactData.position,
-        contactData.location,
         contactData.context,
         contactData.notes,
+        contactData.location,
       ].filter(Boolean);
 
       if (textParts.length === 0) {
@@ -266,7 +263,7 @@ export class ContactsService {
       ...(search && {
         OR: [
           { name: { contains: search, mode: 'insensitive' as const } },
-          { company: { contains: search, mode: 'insensitive' as const } },
+          { context: { contains: search, mode: 'insensitive' as const } },
           { notes: { contains: search, mode: 'insensitive' as const } },
         ],
       }),
@@ -378,7 +375,7 @@ export class ContactsService {
     });
 
     // Regenerar embedding se campos relevantes foram atualizados
-    const relevantFields = ['name', 'company', 'position', 'location', 'context', 'notes'];
+    const relevantFields = ['name', 'location', 'context', 'notes'];
     const hasRelevantChange = relevantFields.some(
       (field) => dto[field as keyof UpdateContactDto] !== undefined,
     );
@@ -386,8 +383,6 @@ export class ContactsService {
     if (hasRelevantChange) {
       this.generateEmbeddingForContact(id, {
         name: contact.name,
-        company: contact.company || undefined,
-        position: contact.position || undefined,
         location: contact.location || undefined,
         context: contact.context || undefined,
         notes: contact.notes || undefined,
@@ -470,8 +465,6 @@ export class ContactsService {
       select: {
         id: true,
         name: true,
-        company: true,
-        position: true,
         location: true,
         context: true,
         notes: true,
@@ -483,8 +476,6 @@ export class ContactsService {
     for (const contact of contacts) {
       await this.generateEmbeddingForContact(contact.id, {
         name: contact.name,
-        company: contact.company || undefined,
-        position: contact.position || undefined,
         location: contact.location || undefined,
         context: contact.context || undefined,
         notes: contact.notes || undefined,
@@ -628,7 +619,7 @@ export class ContactsService {
 
   /**
    * Busca contatos que oferecem um serviço ou produto específico
-   * Usa múltiplas estratégias: semântica, keywords em nome de empresa, tags, texto livre
+   * Usa múltiplas estratégias: semântica, tags, texto livre em context
    */
   async searchByServiceOrProduct(
     ownerId: string,
@@ -653,23 +644,14 @@ export class ContactsService {
       this.logger.warn(`Erro na busca semântica: ${error.message}`);
     }
 
-    // 2. Busca por keywords no nome da empresa
-    const companyResults = await this.searchByCompanyKeywords(ownerId, normalizedQuery, limit);
-    if (companyResults.length > 0) {
-      this.logger.log(
-        `Busca por keywords de empresa encontrou ${companyResults.length} resultados`,
-      );
-      return { contacts: companyResults, searchType: 'company_keywords' };
-    }
-
-    // 3. Busca por tags relacionadas
+    // 2. Busca por tags relacionadas
     const tagResults = await this.searchByRelatedTags(ownerId, normalizedQuery, limit);
     if (tagResults.length > 0) {
       this.logger.log(`Busca por tags encontrou ${tagResults.length} resultados`);
       return { contacts: tagResults, searchType: 'tags' };
     }
 
-    // 4. Fallback: busca texto livre em context/notes/company/position
+    // 3. Fallback: busca texto livre em context/notes
     const textResults = await this.searchByTextForService(ownerId, query, limit);
     if (textResults.length > 0) {
       this.logger.log(`Busca por texto encontrou ${textResults.length} resultados`);
@@ -678,41 +660,6 @@ export class ContactsService {
 
     this.logger.log(`Nenhum resultado encontrado para serviço: "${query}"`);
     return { contacts: [], searchType: 'none' };
-  }
-
-  /**
-   * Busca contatos por keywords no nome da empresa
-   * Ex: "sala" → busca empresas com "office", "coworking", etc.
-   */
-  private async searchByCompanyKeywords(
-    ownerId: string,
-    normalizedQuery: string,
-    limit: number,
-  ): Promise<any[]> {
-    // Obtém as keywords relacionadas ao termo de busca
-    const keywords = this.getRelatedKeywords(normalizedQuery);
-    if (keywords.length === 0) {
-      return [];
-    }
-
-    this.logger.log(`Keywords para "${normalizedQuery}": ${keywords.join(', ')}`);
-
-    // Busca contatos cujo nome de empresa contém alguma das keywords
-    const contacts = await this.prisma.contact.findMany({
-      where: {
-        ownerId,
-        OR: keywords.flatMap((keyword) => [
-          { company: { contains: keyword, mode: 'insensitive' } },
-          { name: { contains: keyword, mode: 'insensitive' } },
-        ]),
-      },
-      include: {
-        tags: { include: { tag: true } },
-      },
-      take: limit,
-    });
-
-    return contacts.map(this.formatContactResponse);
   }
 
   /**
@@ -784,7 +731,7 @@ export class ContactsService {
   }
 
   /**
-   * Busca texto livre em campos relevantes para serviço/produto
+   * Busca texto livre em context/notes para serviço/produto
    */
   private async searchByTextForService(
     ownerId: string,
@@ -799,8 +746,7 @@ export class ContactsService {
         OR: keywords.flatMap((keyword) => [
           { context: { contains: keyword, mode: 'insensitive' } },
           { notes: { contains: keyword, mode: 'insensitive' } },
-          { company: { contains: keyword, mode: 'insensitive' } },
-          { position: { contains: keyword, mode: 'insensitive' } },
+          { name: { contains: keyword, mode: 'insensitive' } },
         ]),
       },
       include: {
@@ -845,8 +791,6 @@ export class ContactsService {
         name: string;
         phone: string | null;
         email: string | null;
-        company: string | null;
-        position: string | null;
         location: string | null;
         notes: string | null;
         context: string | null;
@@ -857,7 +801,7 @@ export class ContactsService {
       }>
     >`
       SELECT
-        id, name, phone, email, company, position, location, notes, context,
+        id, name, phone, email, location, notes, context,
         "ownerId", "createdAt", "updatedAt",
         similarity(name, ${searchName}) as similarity
       FROM contacts
@@ -917,7 +861,7 @@ export class ContactsService {
 
     const results = await this.prisma.$queryRaw<ContactWithSimilarity[]>`
       SELECT
-        id, name, company, position, location, context, phone, email,
+        id, name, location, context, phone, email,
         1 - (embedding <=> ${embedding}::vector) as similarity
       FROM contacts
       WHERE "ownerId" = ${ownerId} AND embedding IS NOT NULL
@@ -937,8 +881,6 @@ export class ContactsService {
         ownerId,
         OR: [
           { name: { contains: query, mode: 'insensitive' } },
-          { company: { contains: query, mode: 'insensitive' } },
-          { position: { contains: query, mode: 'insensitive' } },
           { context: { contains: query, mode: 'insensitive' } },
           { notes: { contains: query, mode: 'insensitive' } },
         ],
@@ -986,14 +928,6 @@ export class ContactsService {
     const opener = openers[Math.floor(Math.random() * openers.length)];
 
     parts.push(`${opener} *${contact.name}*`);
-
-    if (contact.position && contact.company) {
-      parts.push(`é ${contact.position} na ${contact.company}.`);
-    } else if (contact.position) {
-      parts.push(`trabalha como ${contact.position}.`);
-    } else if (contact.company) {
-      parts.push(`é da ${contact.company}.`);
-    }
 
     if (contact.location) {
       parts.push(`📍 ${contact.location}`);
@@ -1063,8 +997,6 @@ export class ContactsService {
           name: extractedContact.name!,
           phone: extractedContact.phone || null,
           email: extractedContact.email || null,
-          company: extractedContact.company || null,
-          position: extractedContact.position || null,
           location: extractedContact.location || null,
           context: extractedContact.context || null,
         },
@@ -1086,8 +1018,6 @@ export class ContactsService {
     // Gerar embedding assíncrono
     this.generateEmbeddingForContact(contact.id, {
       name: contact.name,
-      company: contact.company || undefined,
-      position: contact.position || undefined,
       location: contact.location || undefined,
       context: contact.context || undefined,
     });
@@ -1127,8 +1057,6 @@ export class ContactsService {
       name: newData.name || existing.name,
       phone: newData.phone || existing.phone,
       email: newData.email || existing.email,
-      company: newData.company || existing.company,
-      position: newData.position || existing.position,
       location: newData.location || existing.location,
       context: newData.context
         ? existing.context
@@ -1189,7 +1117,7 @@ export class ContactsService {
   }
 
   /**
-   * Extrai tags do contexto/cargo/empresa usando IA e associa ao contato
+   * Extrai tags do contexto usando IA e associa ao contato
    */
   private async extractAndAssignTags(
     userId: string,
@@ -1206,8 +1134,6 @@ export class ContactsService {
       const extractedTags = await this.aiService.extractTagsFromContext({
         context: data.context,
         name: data.name,
-        company: data.company,
-        position: data.position,
       });
 
       if (extractedTags.length > 0) {
@@ -1226,8 +1152,6 @@ export class ContactsService {
     name: string;
     phone: string | null;
     email: string | null;
-    company: string | null;
-    position: string | null;
     location: string | null;
     notes: string | null;
     context: string | null;
@@ -1240,8 +1164,6 @@ export class ContactsService {
       name: contact.name,
       phone: contact.phone,
       email: contact.email,
-      company: contact.company,
-      position: contact.position,
       location: contact.location,
       notes: contact.notes,
       context: contact.context,

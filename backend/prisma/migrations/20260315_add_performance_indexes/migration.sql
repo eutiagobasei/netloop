@@ -34,7 +34,7 @@ CREATE INDEX IF NOT EXISTS mentioned_connections_name_trgm_idx
 
 -- Create composite index for ownerId + name searches
 CREATE INDEX IF NOT EXISTS contacts_owner_name_idx
-  ON contacts (owner_id, name);
+  ON contacts ("ownerId", name);
 
 -- Analyze tables to update statistics for query planner
 ANALYZE contacts;

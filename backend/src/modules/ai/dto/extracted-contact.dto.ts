@@ -1,11 +1,9 @@
 export interface ExtractedContactData {
   name?: string;
-  company?: string;
-  position?: string;
   phone?: string;
   email?: string;
   location?: string;
-  context?: string;
+  context?: string; // Full context including company, position, how they met, etc.
   tags?: string[];
   confidence?: number;
 }

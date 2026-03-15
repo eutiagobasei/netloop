@@ -2,11 +2,7 @@ import { Module, forwardRef } from '@nestjs/common';
 import { WhatsappService } from './whatsapp.service';
 import { WhatsappController } from './whatsapp.controller';
 import { EvolutionService } from './evolution.service';
-import {
-  EvolutionProvider,
-  MetaCloudProvider,
-  MessagingProviderFactory,
-} from './providers';
+import { EvolutionProvider, MetaCloudProvider, MessagingProviderFactory } from './providers';
 import { ContactsModule } from '../contacts/contacts.module';
 import { ConnectionsModule } from '../connections/connections.module';
 import { AIModule } from '../ai/ai.module';
