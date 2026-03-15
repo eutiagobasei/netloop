@@ -18,6 +18,7 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { CurrentUser } from '../auth/decorators/current-user.decorator';
+import { DEFAULT_PROMPTS } from '../ai/constants/default-prompts';
 
 @ApiTags('Settings')
 @ApiBearerAuth()
@@ -76,5 +77,12 @@ export class SettingsController {
   @ApiResponse({ status: 200, description: 'Resultado do teste de conexão' })
   async testEvolutionConnection() {
     return this.settingsService.testEvolutionConnection();
+  }
+
+  @Get('prompts/defaults')
+  @ApiOperation({ summary: 'Retorna os prompts padrão do sistema' })
+  @ApiResponse({ status: 200, description: 'Prompts padrão' })
+  async getDefaultPrompts() {
+    return DEFAULT_PROMPTS;
   }
 }
