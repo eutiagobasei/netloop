@@ -43,6 +43,13 @@ export class SettingsController {
     return this.settingsService.getStats();
   }
 
+  @Get('prompts/defaults')
+  @ApiOperation({ summary: 'Retorna os prompts padrão do sistema' })
+  @ApiResponse({ status: 200, description: 'Prompts padrão' })
+  async getDefaultPrompts() {
+    return DEFAULT_PROMPTS;
+  }
+
   @Get(':key')
   @ApiOperation({ summary: 'Obter configuração por chave' })
   @ApiResponse({ status: 200, description: 'Dados da configuração' })
@@ -79,10 +86,4 @@ export class SettingsController {
     return this.settingsService.testEvolutionConnection();
   }
 
-  @Get('prompts/defaults')
-  @ApiOperation({ summary: 'Retorna os prompts padrão do sistema' })
-  @ApiResponse({ status: 200, description: 'Prompts padrão' })
-  async getDefaultPrompts() {
-    return DEFAULT_PROMPTS;
-  }
 }
