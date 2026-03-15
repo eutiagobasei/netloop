@@ -159,7 +159,7 @@ export default function PromptsPage() {
   useEffect(() => {
     const fetchDefaults = async () => {
       try {
-        const response = await api.get('/settings/default-prompts')
+        const response = await api.get('/prompts/defaults')
         const prompts: Record<string, string> = {}
         for (const [key, value] of Object.entries(response.data)) {
           prompts[`prompt_${key}`] = value as string
