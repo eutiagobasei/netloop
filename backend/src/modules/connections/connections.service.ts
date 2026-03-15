@@ -492,15 +492,13 @@ export class ConnectionsService {
           searchConditions.length > 0
             ? searchConditions
             : [
-                { position: { contains: search, mode: 'insensitive' as const } },
-                { company: { contains: search, mode: 'insensitive' as const } },
+                { context: { contains: search, mode: 'insensitive' as const } },
                 { notes: { contains: search, mode: 'insensitive' as const } },
               ],
       },
       select: {
         id: true,
-        position: true, // Só retorna cargo/área
-        company: true,
+        context: true,
         ownerId: true,
         owner: {
           select: { id: true, name: true, phone: true },
@@ -520,8 +518,8 @@ export class ConnectionsService {
           phoneToFirstDegree.get(PhoneUtil.normalize(ownerPhone) || '')
         : null;
 
-      // Determina a área: cargo > empresa > fallback
-      const area = c.position || c.company || 'Área não especificada';
+      // Determina a área do contexto ou fallback
+      const area = c.context || 'Área não especificada';
 
       // Usa o telefone do USUÁRIO (ownerPhone) pois é o número cadastrado no WhatsApp
       // O telefone do contato pode ter formato diferente (ex: com 9º dígito)
@@ -532,7 +530,7 @@ export class ConnectionsService {
 
       return {
         id: c.id,
-        area, // Mostra cargo ou empresa
+        area, // Mostra contexto
         connectorName: connector?.name || c.owner.name, // Quem pode conectar
         connectorId: connector?.id || null,
         // Usa o telefone do usuário (WhatsApp real)
