@@ -480,9 +480,9 @@ export class ConnectionsService {
 
     // Cria condições OR para cada palavra em cada campo
     const searchConditions = searchWords.flatMap((word) => [
-      { position: { contains: word, mode: 'insensitive' as const } },
-      { company: { contains: word, mode: 'insensitive' as const } },
+      { context: { contains: word, mode: 'insensitive' as const } },
       { notes: { contains: word, mode: 'insensitive' as const } },
+      { name: { contains: word, mode: 'insensitive' as const } },
     ]);
 
     const secondDegreeContacts = await this.prisma.contact.findMany({
