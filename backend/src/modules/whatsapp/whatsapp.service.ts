@@ -355,14 +355,59 @@ export class WhatsappService {
   ) {
     // Verifica se é uma resposta de aprovação
     const pendingMessage = await this.findPendingApproval(userId, fromPhone);
-    if (pendingMessage && content) {
-      return this.handleApprovalResponse(pendingMessage, content.toLowerCase().trim());
+    if (pendingMessage) {
+      // Se for áudio, transcreve primeiro para usar como resposta de contexto
+      if (messageType === MessageType.AUDIO && messageKey) {
+        try {
+          const transcription = await this.transcribeAudioViaEvolution(messageKey);
+          if (transcription) {
+            return this.handleApprovalResponse(pendingMessage, transcription.toLowerCase().trim());
+          }
+          // Se não conseguiu transcrever, avisa o usuário
+          await this.sendTextMessage(
+            fromPhone,
+            '🎤 Não consegui entender o áudio. Por favor, envie o contexto por texto.',
+          );
+          return { status: 'audio_transcription_failed' };
+        } catch (error) {
+          this.logger.error(`Erro ao transcrever áudio para aprovação: ${error.message}`);
+          await this.sendTextMessage(
+            fromPhone,
+            '🎤 Não consegui entender o áudio. Por favor, envie o contexto por texto.',
+          );
+          return { status: 'audio_transcription_failed' };
+        }
+      } else if (content) {
+        return this.handleApprovalResponse(pendingMessage, content.toLowerCase().trim());
+      }
     }
 
     // Verifica se há atualização de contato pendente
     const pendingUpdate = this.getPendingUpdate(fromPhone);
-    if (pendingUpdate && content) {
-      return this.handleUpdateResponse(userId, fromPhone, pendingUpdate, content, messageId);
+    if (pendingUpdate) {
+      // Se for áudio, transcreve primeiro
+      if (messageType === MessageType.AUDIO && messageKey) {
+        try {
+          const transcription = await this.transcribeAudioViaEvolution(messageKey);
+          if (transcription) {
+            return this.handleUpdateResponse(userId, fromPhone, pendingUpdate, transcription, messageId);
+          }
+          await this.sendTextMessage(
+            fromPhone,
+            '🎤 Não consegui entender o áudio. Por favor, envie a atualização por texto.',
+          );
+          return { status: 'audio_transcription_failed' };
+        } catch (error) {
+          this.logger.error(`Erro ao transcrever áudio para atualização: ${error.message}`);
+          await this.sendTextMessage(
+            fromPhone,
+            '🎤 Não consegui entender o áudio. Por favor, envie a atualização por texto.',
+          );
+          return { status: 'audio_transcription_failed' };
+        }
+      } else if (content) {
+        return this.handleUpdateResponse(userId, fromPhone, pendingUpdate, content, messageId);
+      }
     }
 
     // Verifica se há pedido de contexto pendente
