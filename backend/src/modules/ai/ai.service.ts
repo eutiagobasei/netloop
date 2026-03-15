@@ -4,7 +4,7 @@ import { TranscriptionService } from './services/transcription.service';
 import { ExtractionService, MessageIntent } from './services/extraction.service';
 import { EmbeddingService } from './services/embedding.service';
 import { LoopService } from './services/loop.service';
-import { ExtractedContactData, ExtractionResult } from './dto/extracted-contact.dto';
+import { ExtractionResult } from './dto/extracted-contact.dto';
 import { LoopPlanResponse } from './dto/loop.dto';
 
 @Injectable()
@@ -49,9 +49,20 @@ export class AIService {
 
   /**
    * Extrai o nome/assunto de uma busca
+   * @deprecated Use classifyAndExtract() para 50% menos chamadas de API
    */
   async extractQuerySubject(text: string): Promise<string | null> {
     return this.extractionService.extractQuerySubject(text);
+  }
+
+  /**
+   * Classifica a intenção E extrai o assunto em UMA única chamada de API
+   * Reduz 50% das chamadas de API comparado a classifyIntent + extractQuerySubject
+   */
+  async classifyAndExtract(
+    text: string,
+  ): Promise<{ intent: MessageIntent; subject: string | null }> {
+    return this.extractionService.classifyAndExtract(text);
   }
 
   /**

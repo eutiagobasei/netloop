@@ -460,6 +460,36 @@ Para CONSULTA:
   "clarificationQuestion": "Pergunta para esclarecer se necessário"
 }`,
 
+  // Combined intent classification + query subject extraction (50% fewer API calls)
+  intent_and_subject: `Analise a mensagem do usuário e extraia DUAS informações em uma única resposta:
+
+## 1. INTENÇÃO (intent)
+Classifique em UMA das categorias:
+- "query": Buscar pessoa/profissão/serviço/indicação
+- "contact_info": Fornecendo dados para SALVAR (nome + telefone/empresa/contexto)
+- "update_contact": Modificar dados de contato existente
+- "memory": Editar próprios dados ou consultar o que está salvo sobre si
+- "register_intent": Intenção de cadastrar mas sem dados ainda
+- "other": Saudação, agradecimento, confirmação, genérico
+
+## 2. ASSUNTO (subject)
+Se intent for "query", extraia o nome/termo buscado:
+- Busca por pessoa: extraia nome completo
+- Busca por profissão/serviço: extraia o termo (advogado, marketing, sala comercial)
+- Ignore artigos (o, a, os, as) no início
+
+EXEMPLOS:
+"quem é o João Silva?" → {"intent": "query", "subject": "João Silva"}
+"tem algum advogado?" → {"intent": "query", "subject": "advogado"}
+"quero alugar sala" → {"intent": "query", "subject": "sala comercial"}
+"João da XYZ, 21 99999" → {"intent": "contact_info", "subject": null}
+"oi, bom dia" → {"intent": "other", "subject": null}
+"atualiza o email do Pedro" → {"intent": "update_contact", "subject": "Pedro"}
+"meu nome é João Paulo" → {"intent": "memory", "subject": null}
+
+RESPONDA APENAS com JSON:
+{"intent": "categoria", "subject": "termo ou null"}`,
+
   loop_strategy: `Você é o Loop, um estrategista de networking de elite. Seu trabalho é analisar a rede de contatos de um profissional e criar um plano de ação estratégico para ajudá-lo a atingir um objetivo específico.
 
 ## CONTEXTO DO USUÁRIO

@@ -11,10 +11,7 @@ import { UsersService } from '../users/users.service';
 import { MemoryService } from '../memory/memory.service';
 import { PhoneUtil } from '@/common/utils/phone.util';
 import { parseVCard } from './utils/vcard-parser';
-import {
-  MessagingProviderFactory,
-  IMessagingProvider,
-} from './providers';
+import { MessagingProviderFactory, IMessagingProvider } from './providers';
 import { MetaWebhookDto } from './dto/meta-webhook.dto';
 
 // Timeout para auto-aprovar (2 minutos)
@@ -538,10 +535,7 @@ export class WhatsappService {
         });
 
         // Pergunta o contexto agora que temos o telefone
-        await this.sendTextMessage(
-          message.fromPhone,
-          `De onde vocês se conhecem?`,
-        );
+        await this.sendTextMessage(message.fromPhone, `De onde vocês se conhecem?`);
 
         return { status: 'phone_added' };
       }
@@ -794,8 +788,10 @@ export class WhatsappService {
     } catch (error) {
       this.logger.error(`Erro ao adicionar contexto: ${error.message}`);
 
-      await this.sendTextMessage(fromPhone, `❌ Erro ao adicionar contexto. Tente novamente.`)
-        .catch(() => {});
+      await this.sendTextMessage(
+        fromPhone,
+        `❌ Erro ao adicionar contexto. Tente novamente.`,
+      ).catch(() => {});
 
       return { status: 'error' };
     }
@@ -922,14 +918,13 @@ export class WhatsappService {
         }
       }
 
-      // 1. CLASSIFICAR INTENÇÃO DA MENSAGEM
-      const intent = await this.aiService.classifyIntent(transcription);
-      this.logger.log(`Intenção detectada para ${messageId}: ${intent}`);
+      // 1. CLASSIFICAR INTENÇÃO E EXTRAIR ASSUNTO EM UMA ÚNICA CHAMADA (50% menos API calls)
+      const { intent, subject: querySubject } =
+        await this.aiService.classifyAndExtract(transcription);
+      this.logger.log(`Intenção detectada para ${messageId}: ${intent}, subject: ${querySubject}`);
 
       // 2. SE FOR QUERY → BUSCAR E RESPONDER
       if (intent === 'query') {
-        const querySubject = await this.aiService.extractQuerySubject(transcription);
-
         if (querySubject) {
           const searchResult = await this.contactsService.search(message.userId, querySubject);
           this.logger.log(
@@ -1192,10 +1187,7 @@ export class WhatsappService {
         this.logger.error(`Erro ao enviar saudação para ${fromPhone}:`, greetingError);
         // Fallback: tenta enviar mensagem simples
         try {
-          await this.sendTextMessage(
-            fromPhone,
-            'Olá! Como posso ajudar você hoje?',
-          );
+          await this.sendTextMessage(fromPhone, 'Olá! Como posso ajudar você hoje?');
           this.logger.log(`Fallback de saudação enviado para ${fromPhone}`);
         } catch (fallbackError) {
           this.logger.error(`Fallback também falhou para ${fromPhone}:`, fallbackError);
@@ -1502,6 +1494,10 @@ export class WhatsappService {
   /**
    * Processa resposta de atualização de contato
    */
+  // Limites para validação de notas
+  private readonly MAX_NOTE_LENGTH = 1000;
+  private readonly MAX_TOTAL_NOTES_LENGTH = 5000;
+
   private async handleUpdateResponse(
     userId: string,
     fromPhone: string,
@@ -1509,46 +1505,91 @@ export class WhatsappService {
     content: string,
     messageId: string,
   ) {
-    this.logger.log(`Processando atualização para ${pendingUpdate.contactName}: "${content}"`);
+    this.logger.log(`Processando atualização para ${pendingUpdate.contactName}`);
 
     try {
-      // Extrai os dados da mensagem de atualização
-      const extraction = await this.aiService.extractContactData(content);
-
-      if (!extraction.success || !extraction.data) {
+      // Valida tamanho do conteúdo
+      const trimmedContent = content.trim();
+      if (trimmedContent.length > this.MAX_NOTE_LENGTH) {
         await this.sendTextMessage(
           fromPhone,
-          `🤔 Não consegui entender as informações. Tente enviar no formato:\n"email: novo@email.com, empresa: Nova Empresa"`,
+          `O texto está muito longo (${trimmedContent.length} caracteres). O limite é ${this.MAX_NOTE_LENGTH} caracteres.`,
         );
-        return { status: 'extraction_failed' };
+        return { status: 'content_too_long' };
       }
 
       // Prepara os dados para atualização (apenas campos não vazios)
-      const updateData: any = {};
-      if (extraction.data.phone) updateData.phone = extraction.data.phone;
-      if (extraction.data.email) updateData.email = extraction.data.email;
-      if (extraction.data.company) updateData.company = extraction.data.company;
-      if (extraction.data.position) updateData.position = extraction.data.position;
-      if (extraction.data.location) updateData.location = extraction.data.location;
-      if (extraction.data.context) updateData.notes = extraction.data.context;
+      const updateData: Partial<{
+        phone: string;
+        email: string;
+        company: string;
+        position: string;
+        location: string;
+        notes: string;
+        context: string;
+      }> = {};
 
-      // Se extraiu um nome diferente, não atualiza o nome (era só contexto)
-      // A não ser que o usuário tenha explicitamente pedido para mudar o nome
+      // Tenta extrair dados estruturados (email, telefone, empresa, etc.)
+      const extraction = await this.aiService.extractContactData(trimmedContent);
+
+      if (extraction.success && extraction.data) {
+        if (extraction.data.phone) updateData.phone = extraction.data.phone;
+        if (extraction.data.email) updateData.email = extraction.data.email;
+        if (extraction.data.company) updateData.company = extraction.data.company;
+        if (extraction.data.position) updateData.position = extraction.data.position;
+        if (extraction.data.location) updateData.location = extraction.data.location;
+        // Não usa extraction.data.context aqui - usamos o texto original como notas se não houver campos estruturados
+      }
+
+      // SEMPRE salva como contexto/notas se não extraiu campos estruturados
+      // Isso permite "casamos em abril 2022", "é meu primo", etc.
+      if (Object.keys(updateData).length === 0 && trimmedContent.length > 0) {
+        this.logger.log(`Salvando texto como contexto/notas: "${trimmedContent.substring(0, 50)}..."`);
+
+        // Usa transação para evitar race condition
+        const result = await this.prisma.$transaction(async (tx) => {
+          const existingContact = await tx.contact.findUnique({
+            where: { id: pendingUpdate.contactId },
+            select: { notes: true, context: true },
+          });
+
+          const existingNotes = existingContact?.notes || '';
+          const newNotes = existingNotes ? `${existingNotes}\n${trimmedContent}` : trimmedContent;
+
+          // Valida tamanho total das notas
+          if (newNotes.length > this.MAX_TOTAL_NOTES_LENGTH) {
+            return { error: 'notes_too_long', currentLength: newNotes.length };
+          }
+
+          const newContext = existingContact?.context
+            ? `${existingContact.context}\n${trimmedContent}`
+            : trimmedContent;
+
+          return { notes: newNotes, context: newContext };
+        });
+
+        if ('error' in result) {
+          await this.sendTextMessage(
+            fromPhone,
+            `As notas de *${pendingUpdate.contactName}* estão muito longas. Tente remover notas antigas primeiro.`,
+          );
+          return { status: result.error };
+        }
+
+        updateData.notes = result.notes;
+        updateData.context = result.context;
+      }
 
       if (Object.keys(updateData).length === 0) {
         await this.sendTextMessage(
           fromPhone,
-          `🤔 Não encontrei informações para atualizar. O que você quer mudar em *${pendingUpdate.contactName}*?`,
+          `Não encontrei informações para atualizar. O que você quer mudar em *${pendingUpdate.contactName}*?`,
         );
         return { status: 'no_update_data' };
       }
 
       // Atualiza o contato existente
-      const updatedContact = await this.contactsService.update(
-        pendingUpdate.contactId,
-        userId,
-        updateData,
-      );
+      await this.contactsService.update(pendingUpdate.contactId, userId, updateData);
 
       // Limpa o estado de atualização pendente
       this.clearPendingUpdate(fromPhone);
@@ -1575,7 +1616,12 @@ export class WhatsappService {
       if (updateData.company) updatedFields.push(`🏢 Empresa: ${updateData.company}`);
       if (updateData.position) updatedFields.push(`💼 Cargo: ${updateData.position}`);
       if (updateData.location) updatedFields.push(`📍 Local: ${updateData.location}`);
-      if (updateData.notes) updatedFields.push(`📝 Notas: ${updateData.notes}`);
+      // Para notas, mostra apenas o texto original (não concatenado) para feedback mais limpo
+      if (updateData.notes) {
+        const notesDisplay =
+          trimmedContent.length <= 100 ? trimmedContent : trimmedContent.substring(0, 100) + '...';
+        updatedFields.push(`📝 Notas: ${notesDisplay}`);
+      }
 
       const confirmMessage = `✅ *${pendingUpdate.contactName}* atualizado!\n\n${updatedFields.join('\n')}`;
       await this.sendTextMessage(fromPhone, confirmMessage);
@@ -1922,20 +1968,14 @@ export class WhatsappService {
       return true;
     }
 
-    const expectedSignature = crypto
-      .createHmac('sha256', secret)
-      .update(body)
-      .digest('hex');
+    const expectedSignature = crypto.createHmac('sha256', secret).update(body).digest('hex');
 
     if (signature.length !== expectedSignature.length) {
       return false;
     }
 
     try {
-      return crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expectedSignature),
-      );
+      return crypto.timingSafeEqual(Buffer.from(signature), Buffer.from(expectedSignature));
     } catch {
       return false;
     }
@@ -1956,10 +1996,7 @@ export class WhatsappService {
       return true;
     }
 
-    const expectedSignature = crypto
-      .createHmac('sha256', appSecret)
-      .update(rawBody)
-      .digest('hex');
+    const expectedSignature = crypto.createHmac('sha256', appSecret).update(rawBody).digest('hex');
 
     const providedSignature = signature.replace('sha256=', '');
 
@@ -1969,10 +2006,7 @@ export class WhatsappService {
     }
 
     try {
-      return crypto.timingSafeEqual(
-        Buffer.from(expectedSignature),
-        Buffer.from(providedSignature),
-      );
+      return crypto.timingSafeEqual(Buffer.from(expectedSignature), Buffer.from(providedSignature));
     } catch {
       return false;
     }
@@ -2002,9 +2036,7 @@ export class WhatsappService {
         // Handle message statuses (sent, delivered, read)
         if (value.statuses && value.statuses.length > 0) {
           for (const status of value.statuses) {
-            this.logger.log(
-              `[Meta] Status update: ${status.id} -> ${status.status}`,
-            );
+            this.logger.log(`[Meta] Status update: ${status.id} -> ${status.status}`);
             // Could update message status in database if needed
           }
           continue;
@@ -2026,18 +2058,13 @@ export class WhatsappService {
   /**
    * Process a single Meta webhook message
    */
-  private async processMetaMessage(
-    message: any,
-    value: any,
-  ): Promise<any> {
+  private async processMetaMessage(message: any, value: any): Promise<any> {
     const messageId = message.id;
     const fromPhone = message.from;
     const timestamp = message.timestamp;
     const type = message.type;
 
-    this.logger.log(
-      `[Meta] Processing message: id=${messageId}, from=${fromPhone}, type=${type}`,
-    );
+    this.logger.log(`[Meta] Processing message: id=${messageId}, from=${fromPhone}, type=${type}`);
 
     // Check for duplicate
     const existing = await this.prisma.whatsappMessage.findUnique({

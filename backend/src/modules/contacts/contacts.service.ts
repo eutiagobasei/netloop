@@ -14,6 +14,7 @@ import { UpdateContactDto } from './dto/update-contact.dto';
 import { AIService } from '../ai/ai.service';
 import { ExtractionResult } from '../ai/dto/extracted-contact.dto';
 import { PhoneUtil } from '../../common/utils/phone.util';
+import { SearchCacheService } from './search-cache.service';
 
 // Tipos para resposta de busca
 export interface SearchResult {
@@ -57,6 +58,7 @@ export class ContactsService {
     private readonly prisma: PrismaService,
     @Inject(forwardRef(() => AIService))
     private readonly aiService: AIService,
+    private readonly searchCache: SearchCacheService,
   ) {}
 
   // ============================================
@@ -132,27 +134,24 @@ export class ContactsService {
 
   /**
    * Busca nomes similares na base de contatos
+   * OTIMIZADO: Usa pg_trgm para fuzzy search no banco ao invés de carregar todos os contatos
    */
   private async findSimilarNames(
     ownerId: string,
     searchName: string,
-    threshold = 0.6,
+    threshold = 0.3, // pg_trgm threshold (0.3 é mais permissivo que 0.6 Levenshtein)
   ): Promise<{ name: string; similarity: number }[]> {
-    const contacts = await this.prisma.contact.findMany({
-      where: { ownerId },
-      select: { name: true },
-    });
+    const results = await this.prisma.$queryRaw<{ name: string; similarity: number }[]>`
+      SELECT name, similarity(name, ${searchName}) as similarity
+      FROM contacts
+      WHERE owner_id = ${ownerId}
+        AND similarity(name, ${searchName}) >= ${threshold}
+        AND similarity(name, ${searchName}) < 1
+      ORDER BY similarity(name, ${searchName}) DESC
+      LIMIT 5
+    `;
 
-    const similar = contacts
-      .map((c) => ({
-        name: c.name,
-        similarity: this.calculateSimilarity(searchName, c.name),
-      }))
-      .filter((c) => c.similarity >= threshold && c.similarity < 1)
-      .sort((a, b) => b.similarity - a.similarity)
-      .slice(0, 5);
-
-    return similar;
+    return results;
   }
 
   async create(ownerId: string, dto: CreateContactDto) {
@@ -208,6 +207,9 @@ export class ContactsService {
         this.logger.error(`Erro ao extrair tags: ${err.message}`),
       );
     }
+
+    // Invalidate search cache for this user (new contact may affect search results)
+    this.searchCache.invalidateForUser(ownerId);
 
     return this.formatContactResponse(contact);
   }
@@ -392,6 +394,9 @@ export class ContactsService {
       });
     }
 
+    // Invalidate search cache for this user (updated contact may affect search results)
+    this.searchCache.invalidateForUser(ownerId);
+
     return this.formatContactResponse(contact);
   }
 
@@ -401,6 +406,9 @@ export class ContactsService {
     await this.prisma.contact.delete({
       where: { id },
     });
+
+    // Invalidate search cache for this user
+    this.searchCache.invalidateForUser(ownerId);
   }
 
   async findByTag(ownerId: string, tagId: string) {
@@ -493,8 +501,18 @@ export class ContactsService {
   /**
    * Busca em 2 níveis: primeiro contatos diretos, depois conexões mencionadas (ponte)
    * Com suporte a variações de nomes (Matheus/Mateus, João/Joao)
+   *
+   * OTIMIZADO: Usa cache para queries repetidas (TTL 5 min)
    */
   async search(ownerId: string, query: string): Promise<SearchResult> {
+    // Use cache for repeated searches (5 min TTL)
+    return this.searchCache.getOrSearch(ownerId, query, () => this.searchUncached(ownerId, query));
+  }
+
+  /**
+   * Internal search implementation (uncached)
+   */
+  private async searchUncached(ownerId: string, query: string): Promise<SearchResult> {
     this.logger.log(`Busca em 2 níveis: "${query}"`);
 
     // Extrair nome da query
@@ -798,45 +816,77 @@ export class ContactsService {
    * Busca contato por nome com normalização (encontra variações)
    * Mateus encontra Matheus, Joao encontra João, etc.
    * PUBLIC: usado pelo WhatsappService para update_contact
+   *
+   * OTIMIZADO: Usa pg_trgm para fuzzy search no banco ao invés de carregar todos os contatos
    */
   async searchByNameNormalized(ownerId: string, searchName: string) {
     const normalizedSearch = this.normalizeString(searchName);
     this.logger.log(`Busca normalizada: "${searchName}" → "${normalizedSearch}"`);
 
-    // Buscar todos os contatos e comparar normalizados
-    const contacts = await this.prisma.contact.findMany({
-      where: { ownerId },
+    // 1. Primeiro tenta match exato case-insensitive (mais rápido)
+    const exactMatch = await this.prisma.contact.findFirst({
+      where: {
+        ownerId,
+        name: { equals: searchName, mode: 'insensitive' },
+      },
       include: { tags: { include: { tag: true } } },
     });
 
-    // Encontrar match exato normalizado ou alta similaridade
-    for (const contact of contacts) {
-      const normalizedName = this.normalizeString(contact.name);
-
-      // Match exato após normalização
-      if (normalizedName === normalizedSearch) {
-        this.logger.log(`Match exato normalizado: ${contact.name}`);
-        return contact;
-      }
-
-      // Nome contém a busca ou vice-versa (ex: "João Silva" contém "João")
-      if (normalizedName.includes(normalizedSearch) || normalizedSearch.includes(normalizedName)) {
-        this.logger.log(`Match parcial: ${contact.name} ↔ ${searchName}`);
-        return contact;
-      }
+    if (exactMatch) {
+      this.logger.log(`Match exato: ${exactMatch.name}`);
+      return exactMatch;
     }
 
-    // Busca por alta similaridade (> 85%)
-    for (const contact of contacts) {
-      const similarity = this.calculateSimilarity(searchName, contact.name);
-      if (similarity >= 0.85) {
-        this.logger.log(
-          `Match por similaridade (${(similarity * 100).toFixed(0)}%): ${contact.name}`,
-        );
-        return contact;
-      }
+    // 2. Busca por similaridade usando pg_trgm (threshold 0.3 para fuzzy match)
+    // Retorna o contato com maior similaridade acima do threshold
+    const fuzzyResults = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        name: string;
+        phone: string | null;
+        email: string | null;
+        company: string | null;
+        position: string | null;
+        location: string | null;
+        notes: string | null;
+        context: string | null;
+        owner_id: string;
+        created_at: Date;
+        updated_at: Date;
+        similarity: number;
+      }>
+    >`
+      SELECT
+        id, name, phone, email, company, position, location, notes, context,
+        owner_id, created_at, updated_at,
+        similarity(name, ${searchName}) as similarity
+      FROM contacts
+      WHERE owner_id = ${ownerId}
+        AND (
+          similarity(name, ${searchName}) > 0.3
+          OR name ILIKE ${'%' + searchName + '%'}
+          OR ${searchName} ILIKE '%' || name || '%'
+        )
+      ORDER BY similarity(name, ${searchName}) DESC
+      LIMIT 1
+    `;
+
+    if (fuzzyResults.length > 0) {
+      const result = fuzzyResults[0];
+      this.logger.log(
+        `Match por similaridade (${(result.similarity * 100).toFixed(0)}%): ${result.name}`,
+      );
+
+      // Busca o contato completo com tags via Prisma para manter formato consistente
+      const contact = await this.prisma.contact.findUnique({
+        where: { id: result.id },
+        include: { tags: { include: { tag: true } } },
+      });
+
+      return contact;
     }
 
+    this.logger.log(`Nenhum match encontrado para: ${searchName}`);
     return null;
   }
 

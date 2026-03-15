@@ -187,6 +187,7 @@ export class ExtractionService {
 
   /**
    * Extrai o nome/assunto da busca quando a intenção é query
+   * @deprecated Use classifyAndExtract() para 50% menos chamadas de API
    */
   async extractQuerySubject(text: string): Promise<string | null> {
     this.logger.log(`Extraindo assunto da query: ${text.substring(0, 50)}...`);
@@ -213,6 +214,71 @@ export class ExtractionService {
     } catch (error) {
       this.logger.error(`Erro ao extrair assunto: ${error.message}`);
       return null;
+    }
+  }
+
+  /**
+   * Classifica a intenção E extrai o assunto em UMA única chamada de API
+   * Reduz 50% das chamadas de API comparado a classifyIntent + extractQuerySubject
+   *
+   * @returns {intent, subject} - intent é a classificação, subject é o termo de busca (se query)
+   */
+  async classifyAndExtract(
+    text: string,
+  ): Promise<{ intent: MessageIntent; subject: string | null }> {
+    this.logger.log(`Classificando e extraindo: ${text.substring(0, 50)}...`);
+
+    // Fast path: saudações simples não precisam de API
+    if (this.isGreeting(text)) {
+      this.logger.log(`Mensagem identificada como saudação: "${text}"`);
+      return { intent: 'other', subject: null };
+    }
+
+    // Mensagens muito curtas provavelmente não são dados de contato
+    if (text.trim().length < 10) {
+      this.logger.log(`Mensagem muito curta para ser dados de contato: "${text}"`);
+      return { intent: 'other', subject: null };
+    }
+
+    const client = await this.openaiService.getClient();
+    const systemPrompt = await this.getPrompt('intent_and_subject');
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: text },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 80,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('Resposta vazia do modelo');
+      }
+
+      const result = JSON.parse(content);
+      const validIntents = [
+        'query',
+        'contact_info',
+        'update_contact',
+        'memory',
+        'register_intent',
+        'other',
+      ];
+      const intent = validIntents.includes(result.intent)
+        ? (result.intent as MessageIntent)
+        : 'other';
+      const subject = result.subject && result.subject !== 'null' ? result.subject : null;
+
+      this.logger.log(`Classificado: intent=${intent}, subject=${subject}`);
+      return { intent, subject };
+    } catch (error) {
+      this.logger.error(`Erro ao classificar e extrair: ${error.message}`);
+      return { intent: 'other', subject: null };
     }
   }
 
