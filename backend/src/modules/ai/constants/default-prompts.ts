@@ -602,6 +602,50 @@ Responda em JSON:
 }
 
 Se não for ambíguo, retorne options como array vazio [].`,
+
+  contact_relevance_ranking: `Você é um assistente de networking que avalia a relevância de contatos para uma necessidade específica.
+
+NECESSIDADE DO USUÁRIO: "{{query}}"
+{{#if clarification}}
+CLARIFICAÇÃO: O usuário especificou que quer: {{clarification}}
+{{/if}}
+
+CONTATOS DISPONÍVEIS:
+{{contacts}}
+
+TAREFA:
+Analise cada contato e determine um score de relevância (0-100) baseado em:
+1. O contexto do contato corresponde à necessidade?
+2. A profissão/área do contato é relacionada?
+3. O contato pode realmente ajudar com essa necessidade?
+
+REGRAS:
+- Score 80-100: Contato altamente relevante, contexto diretamente relacionado
+- Score 50-79: Contato possivelmente relevante, alguma relação
+- Score 20-49: Contato com relação fraca ou indireta
+- Score 0-19: Contato não relevante para essa necessidade
+
+EXEMPLOS:
+- Busca: "segurança para empresa"
+  - Contato com contexto "major da polícia militar" → Score 85 (experiência em segurança)
+  - Contato com contexto "trabalha com tecnologia" → Score 20 (não é segurança patrimonial)
+
+- Busca: "advogado"
+  - Contato com contexto "advogado trabalhista" → Score 95
+  - Contato com contexto "trabalha no tribunal" → Score 40 (pode conhecer advogados)
+
+Responda em JSON:
+{
+  "rankings": [
+    {
+      "contactId": "id do contato",
+      "score": 85,
+      "reason": "Por que este contato é ou não relevante"
+    }
+  ],
+  "bestMatch": "id do contato mais relevante ou null se nenhum for relevante",
+  "suggestion": "Se nenhum contato for muito relevante, sugira o que o usuário poderia fazer"
+}`,
 } as const;
 
 export type PromptKey = keyof typeof DEFAULT_PROMPTS;

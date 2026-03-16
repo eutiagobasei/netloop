@@ -876,6 +876,77 @@ export class ExtractionService {
   }
 
   /**
+   * Ranqueia contatos por relevância semântica usando IA
+   * Avalia qual contato é mais adequado para a necessidade do usuário
+   */
+  async rankContactsByRelevance(
+    query: string,
+    contacts: Array<{ id: string; name: string; context?: string }>,
+    clarification?: string,
+  ): Promise<{
+    rankings: Array<{ contactId: string; score: number; reason: string }>;
+    bestMatch: string | null;
+    suggestion?: string;
+  }> {
+    this.logger.log(`Ranqueando ${contacts.length} contatos para query: "${query}"`);
+
+    if (contacts.length === 0) {
+      return { rankings: [], bestMatch: null };
+    }
+
+    // Se só tem um contato, ainda assim validar relevância
+    const client = await this.openaiService.getClient();
+    let systemPrompt = await this.getPrompt('contact_relevance_ranking');
+
+    // Formatar contatos para o prompt
+    const contactsFormatted = contacts
+      .map((c) => `- ID: ${c.id}, Nome: ${c.name}, Contexto: ${c.context || 'não informado'}`)
+      .join('\n');
+
+    systemPrompt = systemPrompt
+      .replace(/\{\{query\}\}/g, query)
+      .replace(/\{\{contacts\}\}/g, contactsFormatted)
+      .replace(/\{\{#if clarification\}\}[\s\S]*?\{\{\/if\}\}/g,
+        clarification ? `CLARIFICAÇÃO: O usuário especificou que quer: ${clarification}` : '');
+
+    try {
+      const response = await client.chat.completions.create({
+        model: AI_CONFIG.DEFAULT_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Avalie a relevância dos contatos para: "${query}"` },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.2,
+        max_tokens: 500,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        return { rankings: [], bestMatch: null };
+      }
+
+      const result = JSON.parse(content);
+      this.logger.log(
+        `Ranking concluído: bestMatch=${result.bestMatch}, rankings=${result.rankings?.length || 0}`,
+      );
+
+      return {
+        rankings: result.rankings || [],
+        bestMatch: result.bestMatch || null,
+        suggestion: result.suggestion,
+      };
+    } catch (error) {
+      this.logger.error(`Erro ao ranquear contatos: ${error.message}`);
+      // Fallback: retorna primeiro contato se houver
+      return {
+        rankings: contacts.map((c) => ({ contactId: c.id, score: 50, reason: 'Fallback' })),
+        bestMatch: contacts[0]?.id || null,
+      };
+    }
+  }
+
+  /**
    * Classifica a resposta do usuário no contexto de um pedido de apresentação
    * Contexto: Sistema perguntou "Quer que eu peça uma apresentação?" para conectar
    * com alguém de uma área específica via um contato de 1º grau

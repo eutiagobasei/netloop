@@ -165,4 +165,20 @@ export class AIService {
   }> {
     return this.extractionService.detectQueryAmbiguity(query);
   }
+
+  /**
+   * Ranqueia contatos por relevância semântica para uma busca
+   * Usa IA para determinar qual contato melhor atende à necessidade
+   */
+  async rankContactsByRelevance(
+    query: string,
+    contacts: Array<{ id: string; name: string; context?: string }>,
+    clarification?: string,
+  ): Promise<{
+    rankings: Array<{ contactId: string; score: number; reason: string }>;
+    bestMatch: string | null;
+    suggestion?: string;
+  }> {
+    return this.extractionService.rankContactsByRelevance(query, contacts, clarification);
+  }
 }

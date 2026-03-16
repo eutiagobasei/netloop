@@ -635,19 +635,106 @@ export class ContactsService {
 
   /**
    * Busca com termo clarificado pelo usuário
-   * Expande a query original com o contexto da opção selecionada
+   * Usa IA para ranquear contatos por relevância semântica
    */
   async searchWithClarification(
     ownerId: string,
     originalQuery: string,
-    selectedOption: string, // label ou description da opção selecionada
+    clarification: string, // contexto da opção selecionada
   ): Promise<SearchResult> {
-    // Expande a query com o contexto selecionado
-    const expandedQuery = `${originalQuery} ${selectedOption}`;
-    this.logger.log(`Busca clarificada: "${originalQuery}" -> "${expandedQuery}"`);
+    this.logger.log(`Busca com clarificação: "${originalQuery}" + "${clarification}"`);
 
-    // Buscar com query expandida (skip ambiguity check para evitar loop)
-    return this.search(ownerId, expandedQuery, true);
+    // Buscar todos os contatos com contexto do usuário
+    const allContacts = await this.getAllContactsWithContext(ownerId);
+
+    if (allContacts.length === 0) {
+      return {
+        type: 'nenhum',
+        data: [],
+        message: 'Você ainda não tem contatos cadastrados.',
+        query: originalQuery,
+      };
+    }
+
+    // Usar IA para ranquear por relevância
+    const ranking = await this.aiService.rankContactsByRelevance(
+      originalQuery,
+      allContacts.map((c) => ({
+        id: c.id,
+        name: c.name,
+        context: c.connectionContext || c.context || '',
+      })),
+      clarification,
+    );
+
+    // Filtrar contatos com score >= 50 (relevantes)
+    const relevantIds = ranking.rankings
+      .filter((r) => r.score >= 50)
+      .sort((a, b) => b.score - a.score)
+      .map((r) => r.contactId);
+
+    if (relevantIds.length === 0) {
+      return {
+        type: 'nenhum',
+        data: [],
+        message: ranking.suggestion || `Não encontrei contatos relevantes para "${originalQuery}" na área de ${clarification}.`,
+        query: originalQuery,
+      };
+    }
+
+    // Retornar contatos ordenados por relevância
+    const relevantContacts = relevantIds
+      .map((id) => allContacts.find((c) => c.id === id))
+      .filter(Boolean);
+
+    // Adicionar reason do ranking ao primeiro contato
+    const bestRanking = ranking.rankings.find((r) => r.contactId === relevantIds[0]);
+
+    return {
+      type: 'direto',
+      data: relevantContacts,
+      message: this.formatRankedMessage(relevantContacts[0], originalQuery, bestRanking?.reason),
+      query: originalQuery,
+    };
+  }
+
+  /**
+   * Busca todos os contatos com contexto (do contato e da conexão)
+   */
+  private async getAllContactsWithContext(ownerId: string): Promise<any[]> {
+    const contacts = await this.prisma.$queryRaw<any[]>`
+      SELECT
+        c.id,
+        c.name,
+        c.phone,
+        c.email,
+        c.context,
+        c.location,
+        conn.context as "connectionContext"
+      FROM contacts c
+      LEFT JOIN connections conn ON conn."contactId" = c.id AND conn."fromUserId" = c."ownerId"
+      WHERE c."ownerId" = ${ownerId}
+      ORDER BY c."createdAt" DESC
+      LIMIT 100
+    `;
+    return contacts;
+  }
+
+  /**
+   * Formata mensagem para resultado ranqueado por IA
+   */
+  private formatRankedMessage(contact: any, query: string, reason?: string): string {
+    const parts: string[] = [];
+
+    parts.push(`🎯 *${contact.name}* pode te ajudar com *${query}*!`);
+
+    if (reason) {
+      parts.push(`\n\n💡 _${reason}_`);
+    } else if (contact.connectionContext || contact.context) {
+      parts.push(`\n\n📝 _${contact.connectionContext || contact.context}_`);
+    }
+
+    return parts.join('');
   }
 
   // ============================================
