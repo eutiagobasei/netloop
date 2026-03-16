@@ -1141,84 +1141,20 @@ export class WhatsappService {
             }
           }
 
-          // AÇÃO: NÃO ENCONTROU - fallback para busca tradicional
-          const searchResult = await this.contactsService.search(message.userId, querySubject, true);
+          // AÇÃO: NÃO ENCONTROU - Smart Search não achou nenhum contato relevante
+          // Usar mensagem da IA ao invés de fallback para busca antiga
+          await this.sendTextMessage(
+            fromPhone,
+            smartResult.message || '😕 Não encontrei nenhum contato que corresponda à sua busca na sua rede.',
+          );
 
-          // Se não encontrou em 1º grau, tenta busca por serviço/produto
-          if (searchResult.type === 'nenhum') {
-            const serviceResult = await this.contactsService.searchByServiceOrProduct(
-              message.userId,
-              querySubject,
-            );
+          await this.prisma.whatsappMessage.update({
+            where: { id: messageId },
+            data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
+          });
 
-            if (serviceResult.contacts.length > 0) {
-              // Encontrou prestadores de serviço - envia resposta formatada
-              await this.sendServiceProviderResponse(
-                fromPhone,
-                serviceResult.contacts,
-                querySubject,
-              );
-
-              // Atualiza a mensagem como processada
-              await this.prisma.whatsappMessage.update({
-                where: { id: messageId },
-                data: {
-                  transcription,
-                  processed: true,
-                  processedAt: new Date(),
-                  approvalStatus: 'APPROVED',
-                },
-              });
-
-              this.logger.log(
-                `Query de serviço processada para ${messageId}: ${querySubject} - ${serviceResult.contacts.length} resultados via ${serviceResult.searchType}`,
-              );
-              return;
-            }
-
-            // Se não encontrou por serviço, tenta 2º grau
-            const secondDegreeResults = await this.connectionsService.getSecondDegreeContacts(
-              message.userId,
-              querySubject,
-            );
-
-            if (secondDegreeResults.length > 0) {
-              // Encontrou conexões de 2º grau - envia mensagem e contato do conector
-              const connector = secondDegreeResults[0];
-              const bridgeMessage = this.formatBridgeMessageWithContact(connector, querySubject);
-              await this.sendTextMessage(fromPhone, bridgeMessage);
-
-              // Envia o contato do conector como vCard
-              if (connector.connectorPhone) {
-                await this.sendContact(fromPhone, {
-                  fullName: connector.connectorName,
-                  phoneNumber: connector.connectorPhone,
-                });
-                this.logger.log(
-                  `[2º grau] Contato de ${connector.connectorName} enviado para ${fromPhone}`,
-                );
-              }
-
-              // Atualiza a mensagem como processada
-              await this.prisma.whatsappMessage.update({
-                where: { id: messageId },
-                data: {
-                  transcription,
-                  processed: true,
-                  processedAt: new Date(),
-                  approvalStatus: 'APPROVED',
-                },
-              });
-
-              this.logger.log(
-                `Query de 2º grau processada para ${messageId}: ${querySubject} - ${secondDegreeResults.length} resultados`,
-              );
-              return;
-            }
-          }
-
-          // Retorna resultado normal (1º grau ou nenhum)
-          await this.sendSearchResponse(fromPhone, searchResult);
+          this.logger.log(`Smart Search: não encontrou resultados para "${querySubject}"`);
+          return;
         } else {
           // Não conseguiu extrair o assunto, responde pedindo mais detalhes
           await this.sendTextMessage(
