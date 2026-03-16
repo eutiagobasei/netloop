@@ -1393,12 +1393,39 @@ export class WhatsappService {
         // Sem sugestões - mensagem simples mas conversacional
         responseText = `🤔 Não encontrei *${query}* na sua rede ainda.\n\n💡 _Envie um áudio ou texto com informações sobre essa pessoa e eu cadastro pra você!_`;
       }
-    } else {
-      // Encontrou - resposta direta do service já é conversacional
-      responseText = result.message;
-    }
+      await this.sendTextMessage(toPhone, responseText);
+    } else if (result.type === 'direto' && result.data.length > 0) {
+      // Encontrou contato direto - enviar mensagem explicativa + vCard
+      const contact = result.data[0];
+      const query = result.query || contact.name;
 
-    await this.sendTextMessage(toPhone, responseText);
+      // Mensagem explicativa com contexto
+      responseText = `🔗 *${contact.name}* pode te ajudar com *${query}*!`;
+
+      if (contact.context) {
+        responseText += `\n\n📝 _${contact.context}_`;
+      }
+
+      responseText += `\n\nSegue o contato para você entrar em contato diretamente:`;
+
+      await this.sendTextMessage(toPhone, responseText);
+
+      // Envia vCard se tiver telefone
+      if (contact.phone) {
+        await this.sendContact(toPhone, {
+          fullName: contact.name,
+          phoneNumber: contact.phone,
+        });
+      }
+    } else if (result.type === 'ponte' && result.data.length > 0) {
+      // Conexão de 2º grau - mensagem explicativa
+      responseText = result.message;
+      await this.sendTextMessage(toPhone, responseText);
+    } else {
+      // Fallback
+      responseText = result.message;
+      await this.sendTextMessage(toPhone, responseText);
+    }
   }
 
   /**
