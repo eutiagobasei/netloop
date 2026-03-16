@@ -1,7 +1,11 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { OpenAIService } from './services/openai.service';
 import { TranscriptionService } from './services/transcription.service';
-import { ExtractionService, MessageIntent } from './services/extraction.service';
+import {
+  ExtractionService,
+  MessageIntent,
+  SmartSearchResult,
+} from './services/extraction.service';
 import { EmbeddingService } from './services/embedding.service';
 import { LoopService } from './services/loop.service';
 import { ExtractionResult } from './dto/extracted-contact.dto';
@@ -180,5 +184,18 @@ export class AIService {
     suggestion?: string;
   }> {
     return this.extractionService.rankContactsByRelevance(query, contacts, clarification);
+  }
+
+  /**
+   * MÉTODO UNIFICADO: Processamento inteligente de busca
+   * Combina detecção de ambiguidade + ranking de relevância em uma única chamada IA
+   */
+  async processSmartSearch(params: {
+    userName: string;
+    userMessage: string;
+    contacts: Array<{ id: string; name: string; context?: string; phone?: string }>;
+    clarification?: string;
+  }): Promise<SmartSearchResult> {
+    return this.extractionService.processSmartSearch(params);
   }
 }

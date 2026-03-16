@@ -36,6 +36,18 @@ export interface RegistrationResponseResult {
   nextAction?: 'ask_name' | 'ask_email' | 'ask_objective' | 'complete' | 'continue_chat';
 }
 
+/**
+ * Resultado do processamento inteligente de busca
+ */
+export interface SmartSearchResult {
+  action: 'clarify' | 'results' | 'not_found';
+  message: string;
+  options?: Array<{ key: string; label: string; description: string }>;
+  results?: Array<{ contactId: string; score: number; reason: string }>;
+  bestMatchId?: string | null;
+  suggestion?: string;
+}
+
 @Injectable()
 export class ExtractionService {
   private readonly logger = new Logger(ExtractionService.name);
@@ -54,6 +66,90 @@ export class ExtractionService {
       return setting || DEFAULT_PROMPTS[key];
     } catch {
       return DEFAULT_PROMPTS[key];
+    }
+  }
+
+  /**
+   * MÉTODO PRINCIPAL: Processamento inteligente de busca usando IA
+   * Unifica detecção de ambiguidade e ranking de relevância em uma única chamada
+   */
+  async processSmartSearch(params: {
+    userName: string;
+    userMessage: string;
+    contacts: Array<{ id: string; name: string; context?: string; phone?: string }>;
+    clarification?: string;
+  }): Promise<SmartSearchResult> {
+    const { userName, userMessage, contacts, clarification } = params;
+
+    this.logger.log(
+      `Smart Search: "${userMessage}" com ${contacts.length} contatos${clarification ? `, clarificação: ${clarification}` : ''}`,
+    );
+
+    const client = await this.openaiService.getClient();
+    let systemPrompt = await this.getPrompt('smart_search');
+
+    // Formatar contatos para o prompt
+    const contactsFormatted = contacts.length > 0
+      ? contacts
+          .map((c) => `- ID: ${c.id}, Nome: ${c.name}, Contexto: "${c.context || 'não informado'}"`)
+          .join('\n')
+      : 'Nenhum contato cadastrado ainda.';
+
+    // Substituir placeholders
+    systemPrompt = systemPrompt
+      .replace(/\{\{userName\}\}/g, userName || 'Usuário')
+      .replace(/\{\{userMessage\}\}/g, userMessage)
+      .replace(/\{\{contacts\}\}/g, contactsFormatted);
+
+    // Tratar clarificação
+    if (clarification) {
+      systemPrompt = systemPrompt.replace(
+        /\{\{#if clarification\}\}[\s\S]*?\{\{\/if\}\}/g,
+        `Clarificação anterior: ${clarification}`,
+      );
+    } else {
+      systemPrompt = systemPrompt.replace(/\{\{#if clarification\}\}[\s\S]*?\{\{\/if\}\}/g, '');
+    }
+
+    try {
+      const response = await client.chat.completions.create({
+        model: AI_CONFIG.DEFAULT_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userMessage },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.3,
+        max_tokens: 800,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('Resposta vazia da IA');
+      }
+
+      const result = JSON.parse(content) as SmartSearchResult;
+      this.logger.log(`Smart Search resultado: action=${result.action}`);
+
+      return result;
+    } catch (error) {
+      this.logger.error(`Erro no Smart Search: ${error.message}`);
+
+      // Fallback: retorna primeiro contato se houver
+      if (contacts.length > 0) {
+        return {
+          action: 'results',
+          message: `Encontrei ${contacts[0].name} que pode te ajudar.`,
+          results: [{ contactId: contacts[0].id, score: 50, reason: 'Fallback' }],
+          bestMatchId: contacts[0].id,
+        };
+      }
+
+      return {
+        action: 'not_found',
+        message: 'Não encontrei contatos para essa busca.',
+        suggestion: 'Tente cadastrar novos contatos ou buscar de outra forma.',
+      };
     }
   }
 
