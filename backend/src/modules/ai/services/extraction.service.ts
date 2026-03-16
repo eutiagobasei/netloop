@@ -539,8 +539,6 @@ export class ExtractionService {
     searchTerm: string;
     contacts: Array<{
       name: string;
-      company?: string;
-      position?: string;
       phone?: string;
       context?: string;
     }>;
@@ -582,8 +580,6 @@ export class ExtractionService {
    */
   async generateSaveConfirmation(contact: {
     name: string;
-    company?: string;
-    position?: string;
     phone?: string;
     email?: string;
     context?: string;
@@ -748,13 +744,11 @@ export class ExtractionService {
   async extractTagsFromContext(params: {
     context?: string;
     name?: string;
-    company?: string;
-    position?: string;
   }): Promise<string[]> {
-    const { context, name, company, position } = params;
+    const { context, name } = params;
 
-    // Se não tem contexto nem cargo nem empresa, não tem o que extrair
-    if (!context && !company && !position) {
+    // Se não tem contexto, não tem o que extrair
+    if (!context) {
       this.logger.log('Sem contexto para extrair tags');
       return [];
     }
@@ -768,8 +762,8 @@ export class ExtractionService {
     systemPrompt = systemPrompt
       .replace(/\{\{context\}\}/g, context || '')
       .replace(/\{\{name\}\}/g, name || '')
-      .replace(/\{\{company\}\}/g, company || '')
-      .replace(/\{\{position\}\}/g, position || '');
+      .replace(/\{\{company\}\}/g, '')
+      .replace(/\{\{position\}\}/g, '');
 
     try {
       const response = await client.chat.completions.create({
@@ -819,6 +813,66 @@ export class ExtractionService {
       .replace(/\s+/g, '-') // Espaços viram hífens
       .replace(/-+/g, '-') // Remove hífens duplicados
       .replace(/^-|-$/g, ''); // Remove hífens no início/fim
+  }
+
+  /**
+   * Detecta se uma query de busca é ambígua e precisa de clarificação
+   * Usa IA para determinar se o termo pode ter múltiplos significados
+   */
+  async detectQueryAmbiguity(query: string): Promise<{
+    isAmbiguous: boolean;
+    reason?: string;
+    options: Array<{ key: string; label: string; description: string }>;
+  }> {
+    this.logger.log(`Verificando ambiguidade da query: "${query}"`);
+
+    // Skip para queries muito curtas ou que parecem nomes próprios
+    if (query.length < 3) {
+      return { isAmbiguous: false, options: [] };
+    }
+
+    // Se parece ser um nome próprio (primeira letra maiúscula), não é ambíguo
+    const looksLikeName = /^[A-Z][a-zà-ú]+(\s+[A-Z]?[a-zà-ú]+)*$/.test(query.trim());
+    if (looksLikeName) {
+      this.logger.log(`Query parece ser nome próprio, pulando verificação de ambiguidade`);
+      return { isAmbiguous: false, options: [] };
+    }
+
+    const client = await this.openaiService.getClient();
+    let systemPrompt = await this.getPrompt('query_disambiguation');
+    systemPrompt = systemPrompt.replace(/\{\{query\}\}/g, query);
+
+    try {
+      const response = await client.chat.completions.create({
+        model: AI_CONFIG.DEFAULT_MODEL,
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: `Analise: "${query}"` },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: AI_CONFIG.DISAMBIGUATION_TEMPERATURE,
+        max_tokens: AI_CONFIG.DISAMBIGUATION_MAX_TOKENS,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        return { isAmbiguous: false, options: [] };
+      }
+
+      const result = JSON.parse(content);
+      this.logger.log(
+        `Resultado da análise de ambiguidade: isAmbiguous=${result.isAmbiguous}, options=${result.options?.length || 0}`,
+      );
+
+      return {
+        isAmbiguous: result.isAmbiguous === true,
+        reason: result.reason,
+        options: result.options || [],
+      };
+    } catch (error) {
+      this.logger.error(`Erro ao detectar ambiguidade: ${error.message}`);
+      return { isAmbiguous: false, options: [] };
+    }
   }
 
   /**

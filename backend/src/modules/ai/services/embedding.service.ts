@@ -158,8 +158,6 @@ export class EmbeddingService {
         conn.created_at as "createdAt",
         c.id as "contactId",
         c.name as "contactName",
-        c.company as "contactCompany",
-        c.position as "contactPosition",
         c.phone as "contactPhone",
         c.email as "contactEmail",
         1 - (conn.embedding <=> $1::vector) as similarity

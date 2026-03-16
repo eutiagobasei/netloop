@@ -55,6 +55,18 @@ export class WhatsappService {
     }
   >();
 
+  // Estado de disambiguação pendente
+  private pendingDisambiguations = new Map<
+    string,
+    {
+      userId: string;
+      originalQuery: string;
+      term: string;
+      options: Array<{ key: string; label: string; description: string }>; // opções completas
+      timestamp: number;
+    }
+  >();
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly configService: ConfigService,
@@ -883,7 +895,79 @@ export class WhatsappService {
         return;
       }
 
-      // 0. VERIFICAR SE HÁ PEDIDO DE APRESENTAÇÃO PENDENTE
+      // 0. VERIFICAR SE HÁ DISAMBIGUAÇÃO PENDENTE
+      const pendingDisambiguation = this.pendingDisambiguations.get(fromPhone);
+      if (pendingDisambiguation) {
+        const DISAMBIGUATION_TIMEOUT_MS = 5 * 60 * 1000; // 5 minutos
+        const isExpired = Date.now() - pendingDisambiguation.timestamp > DISAMBIGUATION_TIMEOUT_MS;
+
+        if (isExpired) {
+          this.pendingDisambiguations.delete(fromPhone);
+          this.logger.log(`[Disambiguation] Estado expirado para ${fromPhone}`);
+        } else {
+          // Verificar se é uma resposta numérica (1, 2, etc)
+          const numericMatch = transcription.trim().match(/^(\d)$/);
+          if (numericMatch) {
+            const optionIndex = parseInt(numericMatch[1], 10) - 1;
+            if (optionIndex >= 0 && optionIndex < pendingDisambiguation.options.length) {
+              const selectedOption = pendingDisambiguation.options[optionIndex];
+              this.pendingDisambiguations.delete(fromPhone);
+
+              // Usar label + description como contexto para busca expandida
+              const clarificationContext = `${selectedOption.label} ${selectedOption.description}`;
+              this.logger.log(
+                `[Disambiguation] Opção ${optionIndex + 1} selecionada: ${selectedOption.label}`,
+              );
+
+              // Buscar com clarificação
+              const searchResult = await this.contactsService.searchWithClarification(
+                pendingDisambiguation.userId,
+                pendingDisambiguation.originalQuery,
+                clarificationContext,
+              );
+
+              // Processar resultado normalmente
+              if (searchResult.type === 'nenhum') {
+                // Tentar busca por serviço
+                const serviceResult = await this.contactsService.searchByServiceOrProduct(
+                  pendingDisambiguation.userId,
+                  `${pendingDisambiguation.originalQuery} ${clarificationContext}`,
+                );
+
+                if (serviceResult.contacts.length > 0) {
+                  await this.sendServiceProviderResponse(
+                    fromPhone,
+                    serviceResult.contacts,
+                    pendingDisambiguation.originalQuery,
+                  );
+                } else {
+                  await this.sendSearchResponse(fromPhone, searchResult);
+                }
+              } else {
+                await this.sendSearchResponse(fromPhone, searchResult);
+              }
+
+              await this.prisma.whatsappMessage.update({
+                where: { id: messageId },
+                data: {
+                  transcription,
+                  processed: true,
+                  processedAt: new Date(),
+                  approvalStatus: 'APPROVED',
+                },
+              });
+
+              return;
+            }
+          }
+
+          // Se não foi resposta numérica válida, limpar estado e processar normalmente
+          this.pendingDisambiguations.delete(fromPhone);
+          this.logger.log(`[Disambiguation] Resposta inválida, limpando estado`);
+        }
+      }
+
+      // 0b. VERIFICAR SE HÁ PEDIDO DE APRESENTAÇÃO PENDENTE
       const pendingIntro = this.pendingIntroRequests.get(fromPhone);
       if (pendingIntro) {
         const isExpired = Date.now() - pendingIntro.timestamp > INTRO_REQUEST_TIMEOUT_MS;
@@ -975,6 +1059,41 @@ export class WhatsappService {
           this.logger.log(
             `Resultado da busca: type=${searchResult.type}, data.length=${searchResult.data?.length || 0}`,
           );
+
+          // Se termo é ambíguo, pedir clarificação ao usuário
+          if (searchResult.type === 'ambiguous' && searchResult.disambiguation) {
+            const { term, options } = searchResult.disambiguation;
+            const optionsList = options
+              .map((opt, i) => `${i + 1}. *${opt.label}* - ${opt.description}`)
+              .join('\n');
+
+            const disambiguationMessage = `🤔 "${term}" pode ter diferentes significados:\n\n${optionsList}\n\nResponda com o número da opção desejada.`;
+
+            await this.sendTextMessage(fromPhone, disambiguationMessage);
+
+            // Salvar estado de disambiguação em memória para próxima mensagem
+            this.pendingDisambiguations.set(fromPhone, {
+              userId: message.userId,
+              originalQuery: querySubject,
+              term,
+              options, // guardar opções completas para usar label/description na busca
+              timestamp: Date.now(),
+            });
+
+            // Atualiza a mensagem como processada
+            await this.prisma.whatsappMessage.update({
+              where: { id: messageId },
+              data: {
+                transcription,
+                processed: true,
+                processedAt: new Date(),
+                approvalStatus: 'APPROVED',
+              },
+            });
+
+            this.logger.log(`Disambiguação solicitada para termo "${term}"`);
+            return;
+          }
 
           // Se não encontrou em 1º grau, tenta busca por serviço/produto
           if (searchResult.type === 'nenhum') {

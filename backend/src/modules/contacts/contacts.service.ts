@@ -18,11 +18,15 @@ import { SearchCacheService } from './search-cache.service';
 
 // Tipos para resposta de busca
 export interface SearchResult {
-  type: 'direto' | 'ponte' | 'nenhum';
+  type: 'direto' | 'ponte' | 'nenhum' | 'ambiguous';
   data: any[];
   message: string;
   suggestions?: string[]; // Nomes similares encontrados
   query?: string; // Query original para contexto
+  disambiguation?: {
+    term: string;
+    options: Array<{ key: string; label: string; description: string }>;
+  };
 }
 
 interface ContactWithSimilarity {
@@ -495,7 +499,25 @@ export class ContactsService {
    *
    * OTIMIZADO: Usa cache para queries repetidas (TTL 5 min)
    */
-  async search(ownerId: string, query: string): Promise<SearchResult> {
+  async search(ownerId: string, query: string, skipAmbiguityCheck = false): Promise<SearchResult> {
+    // Verificar se é termo ambíguo usando IA (pular se já foi clarificado)
+    if (!skipAmbiguityCheck) {
+      const ambiguity = await this.checkQueryAmbiguity(query);
+      if (ambiguity && ambiguity.isAmbiguous) {
+        this.logger.log(`Termo ambíguo detectado pela IA: "${query}" - solicitando clarificação`);
+        return {
+          type: 'ambiguous',
+          data: [],
+          message: `Sua busca pode ter diferentes interpretações. Qual você procura?`,
+          query,
+          disambiguation: {
+            term: ambiguity.term,
+            options: ambiguity.options,
+          },
+        };
+      }
+    }
+
     // Use cache for repeated searches (5 min TTL)
     return this.searchCache.getOrSearch(ownerId, query, () => this.searchUncached(ownerId, query));
   }
@@ -576,6 +598,56 @@ export class ContactsService {
       suggestions,
       query: searchName,
     };
+  }
+
+  // ============================================
+  // DISAMBIGUAÇÃO COM IA
+  // ============================================
+
+  /**
+   * Verifica se uma query é ambígua usando IA
+   * Retorna opções de clarificação se necessário
+   */
+  async checkQueryAmbiguity(
+    query: string,
+  ): Promise<{
+    isAmbiguous: boolean;
+    term: string;
+    options: Array<{ key: string; label: string; description: string }>;
+  } | null> {
+    try {
+      const result = await this.aiService.detectQueryAmbiguity(query);
+
+      if (result.isAmbiguous && result.options.length > 0) {
+        return {
+          isAmbiguous: true,
+          term: query,
+          options: result.options,
+        };
+      }
+
+      return null;
+    } catch (error) {
+      this.logger.error(`Erro ao verificar ambiguidade: ${error.message}`);
+      return null;
+    }
+  }
+
+  /**
+   * Busca com termo clarificado pelo usuário
+   * Expande a query original com o contexto da opção selecionada
+   */
+  async searchWithClarification(
+    ownerId: string,
+    originalQuery: string,
+    selectedOption: string, // label ou description da opção selecionada
+  ): Promise<SearchResult> {
+    // Expande a query com o contexto selecionado
+    const expandedQuery = `${originalQuery} ${selectedOption}`;
+    this.logger.log(`Busca clarificada: "${originalQuery}" -> "${expandedQuery}"`);
+
+    // Buscar com query expandida (skip ambiguity check para evitar loop)
+    return this.search(ownerId, expandedQuery, true);
   }
 
   // ============================================

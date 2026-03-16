@@ -559,6 +559,49 @@ Analisando {{analyzedCount}} de {{totalCount}} contatos mais próximos.
 }
 
 Responda APENAS com o JSON válido.`,
+
+  query_disambiguation: `Você é um assistente de networking que ajuda usuários a encontrar contatos.
+
+Analise a busca do usuário e determine se ela é AMBÍGUA (pode ter múltiplos significados) ou CLARA.
+
+BUSCA DO USUÁRIO: "{{query}}"
+
+EXEMPLOS DE BUSCAS AMBÍGUAS:
+- "segurança" → pode ser cybersecurity/TI OU segurança patrimonial/vigilância
+- "consultoria" → pode ser empresarial/gestão OU tecnologia/sistemas
+- "marketing" → pode ser digital/performance OU tradicional/branding
+- "advogado" → pode ser trabalhista, tributário, criminal, civil, etc
+- "médico" → pode ser várias especialidades
+- "engenheiro" → pode ser civil, software, elétrico, mecânico, etc
+
+EXEMPLOS DE BUSCAS CLARAS (não precisam de clarificação):
+- "João Silva" → nome específico
+- "advogado trabalhista" → já especificado
+- "desenvolvedor frontend" → área clara
+- "nutricionista esportiva" → especialidade clara
+- "empresa de móveis planejados" → produto específico
+
+REGRAS:
+1. Se a busca for um NOME de pessoa → sempre CLARA
+2. Se a busca for genérica e puder ter 2+ interpretações diferentes → AMBÍGUA
+3. Se a busca já tiver qualificador/especialidade → CLARA
+4. Gere 2-4 opções quando ambíguo, ordenadas por probabilidade
+5. Cada opção deve ter: key (identificador), label (nome curto), description (explicação)
+
+Responda em JSON:
+{
+  "isAmbiguous": true/false,
+  "reason": "Por que é ou não ambíguo",
+  "options": [
+    {
+      "key": "identificador_unico",
+      "label": "Nome da Opção",
+      "description": "Explicação breve do que significa"
+    }
+  ]
+}
+
+Se não for ambíguo, retorne options como array vazio [].`,
 } as const;
 
 export type PromptKey = keyof typeof DEFAULT_PROMPTS;
@@ -574,6 +617,8 @@ export const AI_CONFIG = {
   EXTRACTION_TEMPERATURE: 0.3,
   TAG_EXTRACTION_TEMPERATURE: 0.2,
   TAG_EXTRACTION_MAX_TOKENS: 150,
+  DISAMBIGUATION_TEMPERATURE: 0.2,
+  DISAMBIGUATION_MAX_TOKENS: 300,
   RESPONSE_TEMPERATURE: 0.7,
   RESPONSE_MAX_TOKENS: 500,
   CONFIRMATION_MAX_TOKENS: 200,

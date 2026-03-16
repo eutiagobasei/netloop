@@ -150,9 +150,19 @@ export class AIService {
   async extractTagsFromContext(params: {
     context?: string;
     name?: string;
-    company?: string;
-    position?: string;
   }): Promise<string[]> {
     return this.extractionService.extractTagsFromContext(params);
+  }
+
+  /**
+   * Detecta se uma query de busca é ambígua usando IA
+   * Retorna opções de clarificação se o termo for ambíguo
+   */
+  async detectQueryAmbiguity(query: string): Promise<{
+    isAmbiguous: boolean;
+    reason?: string;
+    options: Array<{ key: string; label: string; description: string }>;
+  }> {
+    return this.extractionService.detectQueryAmbiguity(query);
   }
 }

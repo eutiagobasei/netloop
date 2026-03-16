@@ -58,7 +58,6 @@ export interface LoopContact {
   name: string;
   profession: string;
   skills: string[];
-  company: string | null;
   level: 1 | 2;
   connected_through: string | null;
   last_interaction: string | null;
