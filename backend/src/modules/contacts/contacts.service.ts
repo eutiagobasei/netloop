@@ -645,7 +645,7 @@ export class ContactsService {
     this.logger.log(`Busca com clarificação: "${originalQuery}" + "${clarification}"`);
 
     // Buscar todos os contatos com contexto do usuário
-    const allContacts = await this.getAllContactsWithContext(ownerId);
+    const allContacts = await this.getAllContactsForSmartSearch(ownerId);
 
     if (allContacts.length === 0) {
       return {
@@ -662,7 +662,7 @@ export class ContactsService {
       allContacts.map((c) => ({
         id: c.id,
         name: c.name,
-        context: c.connectionContext || c.context || '',
+        context: c.context || '',
       })),
       clarification,
     );
@@ -699,9 +699,15 @@ export class ContactsService {
   }
 
   /**
-   * Busca todos os contatos com contexto (do contato e da conexão)
+   * Busca todos os contatos com contexto para Smart Search
+   * Método PÚBLICO para uso no WhatsApp service
    */
-  private async getAllContactsWithContext(ownerId: string): Promise<any[]> {
+  async getAllContactsForSmartSearch(ownerId: string): Promise<Array<{
+    id: string;
+    name: string;
+    context?: string;
+    phone?: string;
+  }>> {
     const contacts = await this.prisma.$queryRaw<any[]>`
       SELECT
         c.id,
@@ -717,7 +723,14 @@ export class ContactsService {
       ORDER BY c."createdAt" DESC
       LIMIT 100
     `;
-    return contacts;
+
+    // Combinar contexto do contato com contexto da conexão
+    return contacts.map((c) => ({
+      id: c.id,
+      name: c.name,
+      phone: c.phone,
+      context: c.connectionContext || c.context || '',
+    }));
   }
 
   /**

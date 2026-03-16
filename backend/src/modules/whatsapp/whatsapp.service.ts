@@ -62,7 +62,8 @@ export class WhatsappService {
       userId: string;
       originalQuery: string;
       term: string;
-      options: Array<{ key: string; label: string; description: string }>; // opções completas
+      options: Array<{ key: string; label: string; description: string }>;
+      clarificationContext?: string; // contexto selecionado pelo usuário
       timestamp: number;
     }
   >();
@@ -911,41 +912,51 @@ export class WhatsappService {
             const optionIndex = parseInt(numericMatch[1], 10) - 1;
             if (optionIndex >= 0 && optionIndex < pendingDisambiguation.options.length) {
               const selectedOption = pendingDisambiguation.options[optionIndex];
-              this.pendingDisambiguations.delete(fromPhone);
+              const clarificationContext = `${selectedOption.label} - ${selectedOption.description}`;
 
-              // Usar label + description como contexto para busca expandida
-              const clarificationContext = `${selectedOption.label} ${selectedOption.description}`;
               this.logger.log(
                 `[Disambiguation] Opção ${optionIndex + 1} selecionada: ${selectedOption.label}`,
               );
 
-              // Buscar com clarificação
-              const searchResult = await this.contactsService.searchWithClarification(
+              // Buscar todos os contatos e usar Smart Search com clarificação
+              const allContacts = await this.contactsService.getAllContactsForSmartSearch(
                 pendingDisambiguation.userId,
-                pendingDisambiguation.originalQuery,
-                clarificationContext,
               );
 
-              // Processar resultado normalmente
-              if (searchResult.type === 'nenhum') {
-                // Tentar busca por serviço
-                const serviceResult = await this.contactsService.searchByServiceOrProduct(
-                  pendingDisambiguation.userId,
-                  `${pendingDisambiguation.originalQuery} ${clarificationContext}`,
-                );
+              const smartResult = await this.aiService.processSmartSearch({
+                userName: message.user?.name || 'Usuário',
+                userMessage: pendingDisambiguation.originalQuery,
+                contacts: allContacts,
+                clarification: clarificationContext,
+              });
 
-                if (serviceResult.contacts.length > 0) {
-                  await this.sendServiceProviderResponse(
-                    fromPhone,
-                    serviceResult.contacts,
-                    pendingDisambiguation.originalQuery,
-                  );
-                } else {
-                  await this.sendSearchResponse(fromPhone, searchResult);
+              this.pendingDisambiguations.delete(fromPhone);
+
+              // Processar resultado do Smart Search
+              if (smartResult.action === 'results' && smartResult.bestMatchId) {
+                const bestContact = allContacts.find((c) => c.id === smartResult.bestMatchId);
+
+                if (bestContact) {
+                  await this.sendTextMessage(fromPhone, `🎯 ${smartResult.message}`);
+
+                  if (bestContact.phone) {
+                    await this.sendContact(fromPhone, {
+                      fullName: bestContact.name,
+                      phoneNumber: bestContact.phone,
+                    });
+                  }
+
+                  await this.prisma.whatsappMessage.update({
+                    where: { id: messageId },
+                    data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
+                  });
+
+                  return;
                 }
-              } else {
-                await this.sendSearchResponse(fromPhone, searchResult);
               }
+
+              // Fallback se não encontrou
+              await this.sendTextMessage(fromPhone, smartResult.message || 'Não encontrei contatos relevantes para essa busca.');
 
               await this.prisma.whatsappMessage.update({
                 where: { id: messageId },
@@ -1052,48 +1063,86 @@ export class WhatsappService {
         await this.aiService.classifyAndExtract(transcription);
       this.logger.log(`Intenção detectada para ${messageId}: ${intent}, subject: ${querySubject}`);
 
-      // 2. SE FOR QUERY → BUSCAR E RESPONDER
+      // 2. SE FOR QUERY → USAR SMART SEARCH COM IA
       if (intent === 'query') {
         if (querySubject) {
-          const searchResult = await this.contactsService.search(message.userId, querySubject);
-          this.logger.log(
-            `Resultado da busca: type=${searchResult.type}, data.length=${searchResult.data?.length || 0}`,
-          );
+          // Buscar todos os contatos com contexto
+          const allContacts = await this.contactsService.getAllContactsForSmartSearch(message.userId);
 
-          // Se termo é ambíguo, pedir clarificação ao usuário
-          if (searchResult.type === 'ambiguous' && searchResult.disambiguation) {
-            const { term, options } = searchResult.disambiguation;
-            const optionsList = options
+          // Verificar se há clarificação pendente
+          const pendingClarification = this.pendingDisambiguations.get(fromPhone);
+          const clarification = pendingClarification?.clarificationContext;
+
+          // Usar Smart Search com IA
+          const smartResult = await this.aiService.processSmartSearch({
+            userName: message.user?.name || 'Usuário',
+            userMessage: querySubject,
+            contacts: allContacts,
+            clarification,
+          });
+
+          this.logger.log(`Smart Search resultado: action=${smartResult.action}`);
+
+          // Limpar clarificação pendente se existir
+          if (pendingClarification) {
+            this.pendingDisambiguations.delete(fromPhone);
+          }
+
+          // AÇÃO: CLARIFICAR - termo ambíguo
+          if (smartResult.action === 'clarify' && smartResult.options) {
+            const optionsList = smartResult.options
               .map((opt, i) => `${i + 1}. *${opt.label}* - ${opt.description}`)
               .join('\n');
 
-            const disambiguationMessage = `🤔 "${term}" pode ter diferentes significados:\n\n${optionsList}\n\nResponda com o número da opção desejada.`;
+            const disambiguationMessage = `🤔 ${smartResult.message}\n\n${optionsList}\n\nResponda com o número da opção desejada.`;
 
             await this.sendTextMessage(fromPhone, disambiguationMessage);
 
-            // Salvar estado de disambiguação em memória para próxima mensagem
+            // Salvar estado de disambiguação
             this.pendingDisambiguations.set(fromPhone, {
               userId: message.userId,
               originalQuery: querySubject,
-              term,
-              options, // guardar opções completas para usar label/description na busca
+              term: querySubject,
+              options: smartResult.options,
               timestamp: Date.now(),
             });
 
-            // Atualiza a mensagem como processada
             await this.prisma.whatsappMessage.update({
               where: { id: messageId },
-              data: {
-                transcription,
-                processed: true,
-                processedAt: new Date(),
-                approvalStatus: 'APPROVED',
-              },
+              data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
             });
 
-            this.logger.log(`Disambiguação solicitada para termo "${term}"`);
             return;
           }
+
+          // AÇÃO: RESULTADOS - encontrou contatos relevantes
+          if (smartResult.action === 'results' && smartResult.results && smartResult.bestMatchId) {
+            const bestContact = allContacts.find((c) => c.id === smartResult.bestMatchId);
+
+            if (bestContact) {
+              // Enviar mensagem explicativa da IA
+              await this.sendTextMessage(fromPhone, `🎯 ${smartResult.message}`);
+
+              // Enviar vCard se tiver telefone
+              if (bestContact.phone) {
+                await this.sendContact(fromPhone, {
+                  fullName: bestContact.name,
+                  phoneNumber: bestContact.phone,
+                });
+              }
+
+              await this.prisma.whatsappMessage.update({
+                where: { id: messageId },
+                data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
+              });
+
+              this.logger.log(`Smart Search: retornou ${bestContact.name} para "${querySubject}"`);
+              return;
+            }
+          }
+
+          // AÇÃO: NÃO ENCONTROU - fallback para busca tradicional
+          const searchResult = await this.contactsService.search(message.userId, querySubject, true);
 
           // Se não encontrou em 1º grau, tenta busca por serviço/produto
           if (searchResult.type === 'nenhum') {
