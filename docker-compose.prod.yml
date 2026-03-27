@@ -8,7 +8,7 @@ services:
       POSTGRES_PASSWORD: ${DB_PASSWORD}
       POSTGRES_DB: ${DB_NAME}
     ports:
-      - "5441:5432"
+      - "127.0.0.1:5441:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,7 +24,7 @@ services:
     container_name: netloop-prod-redis
     restart: always
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -43,8 +43,6 @@ services:
     image: netloop-prod-backend:latest
     container_name: netloop-prod-backend
     restart: always
-    ports:
-      - "3333:3333"
     environment:
       DATABASE_URL: postgresql://${DB_USER}:${DB_PASSWORD}@postgres:5432/${DB_NAME}?schema=public
       NODE_ENV: production
@@ -60,6 +58,15 @@ services:
         condition: service_healthy
     networks:
       - netloop-network
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.netloop-api.rule=Host(`netloop.atalhodigital.pro`) && PathPrefix(`/api`)"
+      - "traefik.http.routers.netloop-api.entrypoints=websecure"
+      - "traefik.http.routers.netloop-api.tls=true"
+      - "traefik.http.routers.netloop-api.tls.certresolver=letsencrypt"
+      - "traefik.http.services.netloop-api.loadbalancer.server.port=3333"
+      - "traefik.http.routers.netloop-api.priority=10"
 
   admin:
     build:
@@ -70,14 +77,21 @@ services:
     image: netloop-prod-admin:latest
     container_name: netloop-prod-admin
     restart: always
-    ports:
-      - "3002:3002"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     depends_on:
       - backend
     networks:
       - netloop-network
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.netloop-admin.rule=Host(`netloop.atalhodigital.pro`) && !PathPrefix(`/api`) && !PathPrefix(`/app`)"
+      - "traefik.http.routers.netloop-admin.entrypoints=websecure"
+      - "traefik.http.routers.netloop-admin.tls=true"
+      - "traefik.http.routers.netloop-admin.tls.certresolver=letsencrypt"
+      - "traefik.http.services.netloop-admin.loadbalancer.server.port=3002"
+      - "traefik.http.routers.netloop-admin.priority=1"
 
   web:
     build:
@@ -88,14 +102,21 @@ services:
     image: netloop-prod-web:latest
     container_name: netloop-prod-web
     restart: always
-    ports:
-      - "3005:3005"
     environment:
       NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL}
     depends_on:
       - backend
     networks:
       - netloop-network
+      - traefik-public
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.netloop-web.rule=Host(`netloop.atalhodigital.pro`) && PathPrefix(`/app`)"
+      - "traefik.http.routers.netloop-web.entrypoints=websecure"
+      - "traefik.http.routers.netloop-web.tls=true"
+      - "traefik.http.routers.netloop-web.tls.certresolver=letsencrypt"
+      - "traefik.http.services.netloop-web.loadbalancer.server.port=3005"
+      - "traefik.http.routers.netloop-web.priority=5"
 
 volumes:
   postgres_data:
@@ -114,3 +135,5 @@ networks:
   netloop-network:
     name: netloop-prod-network
     driver: bridge
+  traefik-public:
+    external: true
