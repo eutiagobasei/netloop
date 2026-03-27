@@ -578,12 +578,25 @@ Para CONSULTA:
 
 ## 1. INTENÇÃO (intent)
 Classifique em UMA das categorias:
-- "query": Buscar pessoa/profissão/serviço/indicação
+- "query": Buscar pessoa/profissão/serviço específico (ex: "conhece advogado?", "quem é João?")
+- "loop_strategy": Precisa de AJUDA ESTRATÉGICA para alcançar um OBJETIVO DE NEGÓCIO complexo
 - "contact_info": Fornecendo dados para SALVAR (nome + telefone/empresa/contexto)
 - "update_contact": Modificar dados de contato existente
 - "memory": Editar próprios dados ou consultar o que está salvo sobre si
 - "register_intent": Intenção de cadastrar mas sem dados ainda
 - "other": Saudação, agradecimento, confirmação, genérico
+
+## Quando usar loop_strategy:
+Use quando o usuário expressa um OBJETIVO DE NEGÓCIO que requer estratégia de networking:
+- "preciso captar investimento para minha startup"
+- "quero encontrar parceiros para expandir meu negócio"
+- "como consigo fechar contrato com grandes empresas?"
+- "preciso de ajuda para lançar meu produto"
+- "quero crescer minha rede para conseguir clientes enterprise"
+
+NÃO use loop_strategy para buscas simples:
+- "conhece alguém de marketing?" → query
+- "tem advogado?" → query
 
 ## 2. ASSUNTO (subject)
 Se intent for "query", extraia o nome/termo buscado:
@@ -595,6 +608,8 @@ EXEMPLOS:
 "quem é o João Silva?" → {"intent": "query", "subject": "João Silva"}
 "tem algum advogado?" → {"intent": "query", "subject": "advogado"}
 "quero alugar sala" → {"intent": "query", "subject": "sala comercial"}
+"preciso captar investimento para minha startup" → {"intent": "loop_strategy", "subject": null}
+"como encontro parceiros para expandir meu negócio?" → {"intent": "loop_strategy", "subject": null}
 "João da XYZ, 21 99999" → {"intent": "contact_info", "subject": null}
 "oi, bom dia" → {"intent": "other", "subject": null}
 "atualiza o email do Pedro" → {"intent": "update_contact", "subject": "Pedro"}

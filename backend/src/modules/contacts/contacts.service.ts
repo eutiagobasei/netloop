@@ -410,6 +410,15 @@ export class ContactsService {
     this.searchCache.invalidateForUser(ownerId);
   }
 
+  /**
+   * Conta o número total de contatos de um usuário
+   */
+  async countUserContacts(ownerId: string): Promise<number> {
+    return this.prisma.contact.count({
+      where: { ownerId },
+    });
+  }
+
   async findByTag(ownerId: string, tagId: string) {
     const contacts = await this.prisma.contact.findMany({
       where: {
@@ -1148,9 +1157,20 @@ export class ContactsService {
       throw new Error('Dados de extração inválidos');
     }
 
-    const extractedContact = extraction.data;
+    const extractedContact = { ...extraction.data };
 
-    // Buscar contato existente por nome ou telefone
+    // Normalizar telefone antes de qualquer operação
+    if (extractedContact.phone) {
+      const normalizedPhone = PhoneUtil.normalize(extractedContact.phone);
+      if (!normalizedPhone) {
+        this.logger.warn(`Telefone inválido ignorado: ${extractedContact.phone}`);
+        extractedContact.phone = undefined;
+      } else {
+        extractedContact.phone = normalizedPhone;
+      }
+    }
+
+    // Buscar contato existente por nome ou telefone (já normalizado)
     let contact = await this.findExistingContact(ownerId, extractedContact);
 
     if (contact) {
@@ -1199,13 +1219,21 @@ export class ContactsService {
 
   /**
    * Busca contato existente por nome ou telefone
+   * Usa variações de telefone (com/sem 9º dígito) para matching flexível
    */
   private async findExistingContact(ownerId: string, data: { name?: string; phone?: string }) {
     if (data.phone) {
-      const byPhone = await this.prisma.contact.findFirst({
-        where: { ownerId, phone: data.phone },
-      });
-      if (byPhone) return byPhone;
+      // Buscar usando variações do telefone (com e sem 9º dígito)
+      const phoneVariations = PhoneUtil.getVariations(data.phone);
+      if (phoneVariations.length > 0) {
+        const byPhone = await this.prisma.contact.findFirst({
+          where: {
+            ownerId,
+            phone: { in: phoneVariations },
+          },
+        });
+        if (byPhone) return byPhone;
+      }
     }
 
     if (data.name) {

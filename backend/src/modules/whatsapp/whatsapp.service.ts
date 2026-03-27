@@ -6,6 +6,8 @@ import { MessageType, Prisma, ApprovalStatus } from '@prisma/client';
 import { ContactsService } from '../contacts/contacts.service';
 import { ConnectionsService } from '../connections/connections.service';
 import { AIService } from '../ai/ai.service';
+import { LoopService } from '../ai/services/loop.service';
+import { LoopPlanResponse } from '../ai/dto/loop.dto';
 import { RegistrationService } from '../registration/registration.service';
 import { UsersService } from '../users/users.service';
 import { MemoryService } from '../memory/memory.service';
@@ -80,6 +82,7 @@ export class WhatsappService {
     private readonly registrationService: RegistrationService,
     private readonly usersService: UsersService,
     private readonly memoryService: MemoryService,
+    private readonly loopService: LoopService,
   ) {}
 
   /**
@@ -679,6 +682,15 @@ export class WhatsappService {
       return { status: 'missing_phone' };
     }
 
+    // Valida email se foi fornecido
+    if (extractedData.email) {
+      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      if (!emailRegex.test(extractedData.email)) {
+        this.logger.warn(`Email inválido ignorado: ${extractedData.email}`);
+        extractedData.email = null;
+      }
+    }
+
     try {
       // Cria o contato e a conexão
       const contact = await this.createContactAndConnection(
@@ -1228,7 +1240,49 @@ export class WhatsappService {
         return;
       }
 
-      // 3.5. SE FOR REGISTER_INTENT → pedir dados do contato
+      // 3.5. SE FOR LOOP_STRATEGY → gerar plano estratégico
+      if (intent === 'loop_strategy') {
+        this.logger.log(`[Loop] Processando estratégia para ${message.userId}`);
+
+        // Verificar se tem contatos suficientes
+        const contactCount = await this.contactsService.countUserContacts(message.userId);
+
+        if (contactCount < 3) {
+          await this.sendTextMessage(
+            fromPhone,
+            '📊 Para criar um plano estratégico, preciso conhecer melhor sua rede.\n\n' +
+              'Você tem poucos contatos cadastrados. Que tal começar adicionando alguns?\n\n' +
+              '💡 Envie: *Nome, telefone e contexto* de pessoas que você conhece.\n\n' +
+              'Exemplo: "João Silva, 11999998888, investidor anjo da área de tech"',
+          );
+
+          await this.prisma.whatsappMessage.update({
+            where: { id: messageId },
+            data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
+          });
+          return;
+        }
+
+        // Gerar plano via Loop
+        const plan = await this.loopService.generatePlan(message.userId, transcription);
+
+        // Formatar e enviar plano
+        const response = this.formatLoopPlanForWhatsApp(plan);
+        await this.sendTextMessage(fromPhone, response);
+
+        // Enviar vCards dos top 5 contatos do plano
+        await this.sendLoopPlanContacts(fromPhone, plan, message.userId);
+
+        await this.prisma.whatsappMessage.update({
+          where: { id: messageId },
+          data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
+        });
+
+        this.logger.log(`[Loop] Plano gerado e enviado para ${fromPhone}`);
+        return;
+      }
+
+      // 3.6. SE FOR REGISTER_INTENT → pedir dados do contato
       if (intent === 'register_intent') {
         await this.prisma.whatsappMessage.update({
           where: { id: messageId },
@@ -1252,7 +1306,7 @@ export class WhatsappService {
         return;
       }
 
-      // 3.6. SE FOR MEMORY → editar próprios dados ou consultar memória
+      // 3.7. SE FOR MEMORY → editar próprios dados ou consultar memória
       if (intent === 'memory') {
         this.logger.log(`[Memory] Processando pedido de memória: ${messageId}`);
 
@@ -1352,6 +1406,84 @@ export class WhatsappService {
           processedAt: new Date(),
         },
       });
+    }
+  }
+
+  /**
+   * Formata plano do Loop para envio via WhatsApp
+   */
+  private formatLoopPlanForWhatsApp(plan: LoopPlanResponse): string {
+    let message = `🎯 *Plano Estratégico de Networking*\n\n`;
+    message += `*Seu objetivo:* ${plan.goal}\n\n`;
+
+    // Necessidades decompostas
+    if (plan.decomposedNeeds.length > 0) {
+      message += `💡 *O que você vai precisar:*\n`;
+      plan.decomposedNeeds.forEach((need, i) => {
+        message += `${i + 1}. ${need}\n`;
+      });
+      message += `\n`;
+    }
+
+    // Plano de ação (top 5)
+    message += `📋 *Seu Plano de Ação:*\n\n`;
+    const topActions = plan.actionPlan.slice(0, 5);
+
+    topActions.forEach((action) => {
+      const grauEmoji = action.level === 1 ? '🟢' : '🔵';
+      message += `*${action.order}. ${action.contactName}* ${grauEmoji} ${action.level}º grau\n`;
+      message += `📌 _${action.approach}_\n`;
+      message += `💬 *Pergunte:* ${action.whatToAsk}\n`;
+      if (action.unlocks.length > 0) {
+        message += `🔓 *Desbloqueia:* ${action.unlocks.join(', ')}\n`;
+      }
+      message += `\n`;
+    });
+
+    // Gaps
+    if (plan.gaps.length > 0) {
+      message += `⚠️ *Gaps na sua rede:*\n`;
+      plan.gaps.forEach((gap) => {
+        message += `• *${gap.need}:* ${gap.description}\n`;
+      });
+      message += `\n`;
+    }
+
+    message += `📊 _Analisados ${plan.contactsAnalyzed} de ${plan.totalContacts} contatos_\n\n`;
+    message += `👇 Enviando os contatos em seguida...`;
+
+    return message;
+  }
+
+  /**
+   * Envia vCards dos contatos do plano Loop
+   */
+  private async sendLoopPlanContacts(
+    toPhone: string,
+    plan: LoopPlanResponse,
+    userId: string,
+  ): Promise<void> {
+    // Pegar top 5 contatos do plano
+    const topActions = plan.actionPlan.slice(0, 5);
+
+    for (const action of topActions) {
+      try {
+        // Buscar contato completo no banco
+        const contact = await this.contactsService.findById(action.contactId, userId);
+
+        if (contact?.phone) {
+          // Pequeno delay entre envios (evitar rate limit)
+          await new Promise((resolve) => setTimeout(resolve, 500));
+
+          await this.sendContact(toPhone, {
+            fullName: contact.name,
+            phoneNumber: contact.phone,
+            organization: contact.context?.substring(0, 50) || undefined,
+          });
+        }
+      } catch (error) {
+        this.logger.warn(`Não foi possível enviar vCard de ${action.contactName}: ${error.message}`);
+      }
     }
   }
 
@@ -1860,6 +1992,15 @@ export class WhatsappService {
     extractedData: any,
     transcription: string,
   ) {
+    // Normaliza telefone antes de verificar duplicatas
+    let normalizedPhone: string | null = null;
+    if (extractedData.phone) {
+      normalizedPhone = PhoneUtil.normalize(extractedData.phone);
+      if (!normalizedPhone) {
+        this.logger.warn(`Telefone inválido ignorado: ${extractedData.phone}`);
+      }
+    }
+
     // Verifica se já existe contato com mesmo nome
     if (extractedData.name) {
       const existingByName = await this.prisma.contact.findFirst({
@@ -1872,22 +2013,31 @@ export class WhatsappService {
       }
     }
 
-    // Verifica se já existe contato com mesmo telefone
-    if (extractedData.phone) {
+    // Verifica se já existe contato com mesmo telefone (usando variações)
+    if (normalizedPhone) {
+      const phoneVariations = PhoneUtil.getVariations(normalizedPhone);
       const existingByPhone = await this.prisma.contact.findFirst({
-        where: { ownerId: userId, phone: extractedData.phone },
+        where: {
+          ownerId: userId,
+          phone: { in: phoneVariations },
+        },
       });
 
       if (existingByPhone) {
-        this.logger.log(`Contato já existe com telefone: ${extractedData.phone}`);
+        this.logger.log(`Contato já existe com telefone: ${normalizedPhone}`);
         return existingByPhone;
       }
     }
 
-    // Cria o contato
+    // Telefone é obrigatório (já validado em approveAndCreateContact)
+    if (!normalizedPhone) {
+      throw new Error(`Telefone obrigatório para criar contato: ${extractedData.name}`);
+    }
+
+    // Cria o contato (já com telefone normalizado)
     const contact = await this.contactsService.create(userId, {
       name: extractedData.name,
-      phone: extractedData.phone || undefined,
+      phone: normalizedPhone,
       email: extractedData.email || undefined,
       location: extractedData.location || undefined,
       notes: extractedData.context || undefined,

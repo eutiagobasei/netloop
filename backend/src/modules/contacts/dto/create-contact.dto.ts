@@ -6,8 +6,26 @@ import {
   IsArray,
   IsUUID,
   IsNotEmpty,
-  Matches,
+  Validate,
+  ValidatorConstraint,
+  ValidatorConstraintInterface,
 } from 'class-validator';
+import { PhoneUtil } from '../../../common/utils/phone.util';
+
+/**
+ * Custom validator that uses PhoneUtil.isValid() for phone validation
+ * This ensures DTO validation matches the actual normalization logic
+ */
+@ValidatorConstraint({ name: 'isValidBrazilianPhone', async: false })
+export class IsValidBrazilianPhone implements ValidatorConstraintInterface {
+  validate(phone: string): boolean {
+    return PhoneUtil.isValid(phone);
+  }
+
+  defaultMessage(): string {
+    return 'Telefone inválido. Use formato brasileiro: 21987654321 ou +5521987654321';
+  }
+}
 
 export class CreateContactDto {
   @ApiProperty({ example: 'Maria Santos' })
@@ -21,9 +39,7 @@ export class CreateContactDto {
   })
   @IsString()
   @IsNotEmpty({ message: 'Telefone é obrigatório' })
-  @Matches(/^(\+?55)?[1-9]{2}9?[0-9]{8}$/, {
-    message: 'Telefone inválido. Use formato: 21987654321 ou +5521987654321',
-  })
+  @Validate(IsValidBrazilianPhone)
   phone: string;
 
   @ApiProperty({ example: 'maria@empresa.com', required: false })

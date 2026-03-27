@@ -10,6 +10,7 @@ export type MessageIntent =
   | 'update_contact'
   | 'memory'
   | 'register_intent'
+  | 'loop_strategy'
   | 'other';
 
 export interface RegistrationResponseParams {
@@ -363,6 +364,7 @@ export class ExtractionService {
         'update_contact',
         'memory',
         'register_intent',
+        'loop_strategy',
         'other',
       ];
       const intent = validIntents.includes(result.intent)
