@@ -11,6 +11,8 @@ import {
   CreateGroupDto,
   UpdateGroupDto,
   AddMemberDto,
+  AddMemberByPhoneDto,
+  AddMemberByPhoneResponseDto,
   ImportInvitesDto,
   ImportInvitesResponseDto,
 } from './dto';
@@ -263,6 +265,81 @@ export class GroupsService {
   }
 
   /**
+   * Adiciona um membro ao grupo por telefone
+   * Se o usuário já existe, adiciona direto. Se não, cria convite e envia notificação.
+   */
+  async addMemberByPhone(
+    groupId: string,
+    adminUserId: string,
+    dto: AddMemberByPhoneDto,
+  ): Promise<AddMemberByPhoneResponseDto> {
+    await this.ensureAdmin(groupId, adminUserId);
+
+    const group = await this.findById(groupId);
+    const normalizedPhone = this.normalizePhone(dto.phone);
+
+    // Verifica se já é membro
+    const existingMember = await this.prisma.groupMember.findFirst({
+      where: {
+        groupId,
+        user: { phone: normalizedPhone },
+        leftAt: null,
+      },
+    });
+
+    if (existingMember) {
+      throw new ConflictException('Já é membro deste grupo');
+    }
+
+    // Verifica se usuário existe
+    const user = await this.prisma.user.findFirst({
+      where: { phone: normalizedPhone },
+    });
+
+    if (user) {
+      // Usuário existe → adiciona direto
+      await this.addMember(groupId, adminUserId, { userId: user.id });
+      return { status: 'added', message: `${user.name} adicionado ao grupo` };
+    }
+
+    // Usuário não existe → cria convite e notifica
+    await this.prisma.groupInvite.upsert({
+      where: { groupId_phone: { groupId, phone: normalizedPhone } },
+      create: {
+        groupId,
+        name: dto.name.trim(),
+        phone: normalizedPhone,
+        company: dto.company?.trim() || null,
+        email: dto.email?.trim().toLowerCase() || null,
+        status: 'PENDING',
+      },
+      update: {
+        name: dto.name.trim(),
+        company: dto.company?.trim() || null,
+        email: dto.email?.trim().toLowerCase() || null,
+        status: 'PENDING',
+      },
+    });
+
+    // Envia notificação via WhatsApp
+    const sent = await this.whatsappService.sendSealNotification(normalizedPhone, group.name);
+
+    if (sent) {
+      await this.prisma.groupInvite.update({
+        where: { groupId_phone: { groupId, phone: normalizedPhone } },
+        data: { status: 'NOTIFIED', invitedAt: new Date() },
+      });
+    }
+
+    this.logger.log(
+      `Convite criado para ${dto.name} (${normalizedPhone}) no grupo ${group.name}. ` +
+        `Notificação ${sent ? 'enviada' : 'não enviada'}.`,
+    );
+
+    return { status: 'invited', message: `${dto.name} será adicionado quando se cadastrar` };
+  }
+
+  /**
    * Remove um membro do grupo, remove a tag dos contatos e envia notificação de escassez
    */
   async removeMember(groupId: string, adminUserId: string, userId: string) {
@@ -459,6 +536,8 @@ export class GroupsService {
 
   /**
    * Importa convites em massa a partir de dados de planilha
+   * Se o telefone pertence a um usuário existente, adiciona direto como membro.
+   * Se não, cria convite e envia notificação via WhatsApp.
    */
   async importInvites(
     groupId: string,
@@ -471,6 +550,7 @@ export class GroupsService {
 
     const result: ImportInvitesResponseDto = {
       created: 0,
+      addedDirectly: 0,
       duplicates: 0,
       alreadyMembers: 0,
       errors: [],
@@ -496,6 +576,16 @@ export class GroupsService {
 
     const existingInvitePhones = new Set(existingInvites.map((i) => i.phone));
 
+    // Busca todos os usuários existentes para verificar quem já está cadastrado
+    const allUsers = await this.prisma.user.findMany({
+      where: { phone: { not: null } },
+      select: { id: true, phone: true, name: true },
+    });
+
+    const usersByPhone = new Map(
+      allUsers.filter((u) => u.phone).map((u) => [this.normalizePhone(u.phone!), u]),
+    );
+
     // Processa cada convite
     for (let i = 0; i < dto.invites.length; i++) {
       const invite = dto.invites[i];
@@ -516,21 +606,48 @@ export class GroupsService {
           continue;
         }
 
-        // Cria o convite
-        await this.prisma.groupInvite.create({
-          data: {
-            groupId,
-            name: invite.name.trim(),
-            phone: normalizedPhone,
-            company: invite.company?.trim() || null,
-            companyDescription: invite.companyDescription?.trim() || null,
-            status: 'PENDING',
-          },
-        });
+        // Verifica se usuário já existe no sistema
+        const existingUser = usersByPhone.get(normalizedPhone);
 
-        // Adiciona ao set para evitar duplicatas no mesmo arquivo
-        existingInvitePhones.add(normalizedPhone);
-        result.created++;
+        if (existingUser) {
+          // Usuário existe → adiciona direto como membro
+          await this.addMember(groupId, adminUserId, { userId: existingUser.id });
+          memberPhones.add(normalizedPhone); // Evita duplicatas
+          result.addedDirectly++;
+          this.logger.log(
+            `Usuário existente ${existingUser.name} adicionado direto ao grupo ${group.name}`,
+          );
+        } else {
+          // Usuário não existe → cria convite e notifica
+          await this.prisma.groupInvite.create({
+            data: {
+              groupId,
+              name: invite.name.trim(),
+              phone: normalizedPhone,
+              company: invite.company?.trim() || null,
+              companyDescription: invite.companyDescription?.trim() || null,
+              status: 'PENDING',
+            },
+          });
+
+          // Envia notificação via WhatsApp (async, não bloqueia)
+          this.whatsappService
+            .sendSealNotification(normalizedPhone, group.name)
+            .then(async (sent) => {
+              if (sent) {
+                await this.prisma.groupInvite.update({
+                  where: { groupId_phone: { groupId, phone: normalizedPhone } },
+                  data: { status: 'NOTIFIED', invitedAt: new Date() },
+                });
+              }
+            })
+            .catch((err) => {
+              this.logger.error(`Erro ao enviar notificação de selo: ${err.message}`);
+            });
+
+          existingInvitePhones.add(normalizedPhone);
+          result.created++;
+        }
       } catch (error) {
         // Em caso de erro de constraint unique (race condition)
         if ((error as any).code === 'P2002') {
@@ -543,8 +660,9 @@ export class GroupsService {
     }
 
     this.logger.log(
-      `Importação de convites para grupo ${group.name}: ${result.created} criados, ` +
-        `${result.duplicates} duplicados, ${result.alreadyMembers} já membros`,
+      `Importação de convites para grupo ${group.name}: ${result.created} convites criados, ` +
+        `${result.addedDirectly} adicionados direto, ${result.duplicates} duplicados, ` +
+        `${result.alreadyMembers} já membros`,
     );
 
     return result;

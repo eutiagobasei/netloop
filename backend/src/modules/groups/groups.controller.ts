@@ -20,6 +20,8 @@ import {
   CreateGroupDto,
   UpdateGroupDto,
   AddMemberDto,
+  AddMemberByPhoneDto,
+  AddMemberByPhoneResponseDto,
   ImportInvitesDto,
   ImportInvitesResponseDto,
 } from './dto';
@@ -81,6 +83,28 @@ export class GroupsController {
     @Body() dto: AddMemberDto,
   ) {
     return this.groupsService.addMember(groupId, adminUserId, dto);
+  }
+
+  @Post(':id/members/by-phone')
+  @ApiOperation({
+    summary: 'Adicionar membro por telefone (apenas admin)',
+    description:
+      'Se o telefone pertence a um usuário cadastrado, adiciona direto. ' +
+      'Caso contrário, cria convite e envia notificação via WhatsApp.',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Membro adicionado ou convite criado',
+    type: AddMemberByPhoneResponseDto,
+  })
+  @ApiResponse({ status: 403, description: 'Apenas administradores podem adicionar' })
+  @ApiResponse({ status: 409, description: 'Já é membro deste grupo' })
+  async addMemberByPhone(
+    @CurrentUser('id') adminUserId: string,
+    @Param('id', ParseUUIDPipe) groupId: string,
+    @Body() dto: AddMemberByPhoneDto,
+  ): Promise<AddMemberByPhoneResponseDto> {
+    return this.groupsService.addMemberByPhone(groupId, adminUserId, dto);
   }
 
   @Delete(':id/members/:userId')

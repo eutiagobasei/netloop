@@ -57,7 +57,7 @@ export class WhatsappService {
     }
   >();
 
-  // Estado de disambiguação pendente
+  // Estado de disambiguação pendente (para queries de busca)
   private pendingDisambiguations = new Map<
     string,
     {
@@ -66,6 +66,16 @@ export class WhatsappService {
       term: string;
       options: Array<{ key: string; label: string; description: string }>;
       clarificationContext?: string; // contexto selecionado pelo usuário
+      timestamp: number;
+    }
+  >();
+
+  // Estado de desambiguação de contatos para UPDATE (múltiplos contatos com mesmo nome)
+  private pendingContactDisambiguation = new Map<
+    string,
+    {
+      options: Array<{ id: string; name: string; context: string }>;
+      type: 'update';
       timestamp: number;
     }
   >();
@@ -396,6 +406,33 @@ export class WhatsappService {
       } else if (content) {
         return this.handleApprovalResponse(pendingMessage, content.toLowerCase().trim());
       }
+    }
+
+    // Verifica se há desambiguação de contato pendente (múltiplos contatos com mesmo nome)
+    const pendingContactDisambig = this.getPendingContactDisambiguation(fromPhone);
+    if (pendingContactDisambig && content) {
+      const choice = parseInt(content.trim(), 10);
+
+      if (isNaN(choice) || choice < 1 || choice > pendingContactDisambig.options.length) {
+        await this.sendTextMessage(
+          fromPhone,
+          `Responda com um número de 1 a ${pendingContactDisambig.options.length}`,
+        );
+        return { status: 'disambiguation_invalid_choice' };
+      }
+
+      const selected = pendingContactDisambig.options[choice - 1];
+      this.clearPendingContactDisambiguation(fromPhone);
+
+      if (pendingContactDisambig.type === 'update') {
+        // Continua fluxo de update com contato selecionado
+        const contact = await this.contactsService.findById(selected.id, userId);
+        this.setPendingUpdate(fromPhone, contact.id, contact.name);
+        await this.sendUpdatePrompt(fromPhone, contact);
+        return { status: 'disambiguation_resolved', contactId: selected.id };
+      }
+
+      return { status: 'disambiguation_resolved' };
     }
 
     // Verifica se há atualização de contato pendente
@@ -813,22 +850,21 @@ export class WhatsappService {
       // Limpa o estado de contexto pendente
       this.clearPendingContextRequest(fromPhone);
 
-      // Busca o contato atual para pegar o contexto existente
+      // Busca o contato atual para pegar as notas existentes
       const existingContact = await this.prisma.contact.findUnique({
         where: { id: pendingContext.contactId },
-        select: { context: true, notes: true },
+        select: { notes: true },
       });
 
-      // Monta o novo contexto (acumula com existente se houver)
-      const existingContext = existingContact?.context || '';
-      const newContext = existingContext ? `${existingContext}\n\n${content}` : content;
+      // Monta as novas notas (acumula com existente se houver)
+      const existingNotes = existingContact?.notes || '';
+      const newNotes = existingNotes ? `${existingNotes}\n\n${content}` : content;
 
-      // Atualiza o contato com o novo contexto
+      // Atualiza o contato com as novas notas
       await this.prisma.contact.update({
         where: { id: pendingContext.contactId },
         data: {
-          context: newContext,
-          notes: existingContact?.notes ? `${existingContact.notes}\n${content}` : content,
+          notes: newNotes,
         },
       });
 
@@ -1192,28 +1228,36 @@ export class WhatsappService {
         return;
       }
 
-      // 3. SE FOR UPDATE_CONTACT → FLUXO DE ATUALIZAÇÃO
+      // 3. SE FOR UPDATE_CONTACT → FLUXO DE ATUALIZAÇÃO (com desambiguação)
       if (intent === 'update_contact') {
         const contactName = await this.aiService.extractQuerySubject(transcription);
 
         if (contactName) {
-          const existingContact = await this.contactsService.searchByNameNormalized(
+          // Buscar TODOS os contatos similares (não apenas o primeiro)
+          const matches = await this.contactsService.searchByNameSimilarMultiple(
             message.userId,
             contactName,
+            5,
           );
 
-          if (existingContact) {
-            // Encontrou o contato - salva estado de atualização pendente
-            this.setPendingUpdate(fromPhone, existingContact.id, existingContact.name);
-
-            // Mostra dados atuais e pede novas informações
-            await this.sendUpdatePrompt(fromPhone, existingContact);
-          } else {
-            // Não encontrou - pergunta qual contato
+          if (matches.length === 0) {
+            // Não encontrou nenhum contato
             await this.sendTextMessage(
               fromPhone,
               `🤔 Não encontrei *${contactName}* na sua rede.\n\nQual contato você quer atualizar?`,
             );
+          } else if (matches.length === 1) {
+            // Match único - continua fluxo normal
+            const existingContact = await this.contactsService.findById(
+              matches[0].id,
+              message.userId,
+            );
+            this.setPendingUpdate(fromPhone, existingContact.id, existingContact.name);
+            await this.sendUpdatePrompt(fromPhone, existingContact);
+          } else {
+            // Múltiplos matches - desambiguação
+            this.setPendingContactDisambiguation(fromPhone, matches, 'update');
+            await this.sendContactDisambiguationMessage(fromPhone, matches, 'update');
           }
         } else {
           // Não conseguiu extrair o nome
@@ -1786,6 +1830,102 @@ export class WhatsappService {
     this.logger.log(`Estado de atualização limpo para ${phone}`);
   }
 
+  // ============================================
+  // GERENCIAMENTO DE DESAMBIGUAÇÃO DE CONTATOS
+  // ============================================
+
+  // Timeout para expirar desambiguação de contatos (2 minutos)
+  private readonly CONTACT_DISAMBIGUATION_TIMEOUT_MS = 2 * 60 * 1000;
+
+  /**
+   * Salva estado de desambiguação de contatos
+   */
+  private setPendingContactDisambiguation(
+    phone: string,
+    contacts: Array<{
+      id: string;
+      name: string;
+      professionalInfo: string | null;
+      relationshipContext: string | null;
+    }>,
+    type: 'update',
+  ): void {
+    this.pendingContactDisambiguation.set(phone, {
+      options: contacts.map((c) => ({
+        id: c.id,
+        name: c.name,
+        context: c.professionalInfo || c.relationshipContext || '',
+      })),
+      type,
+      timestamp: Date.now(),
+    });
+    this.logger.log(
+      `Estado de desambiguação de contato salvo para ${phone}: ${contacts.length} opções`,
+    );
+  }
+
+  /**
+   * Obtém estado de desambiguação de contatos pendente (se não expirou)
+   */
+  private getPendingContactDisambiguation(phone: string): {
+    options: Array<{ id: string; name: string; context: string }>;
+    type: 'update';
+  } | null {
+    const pending = this.pendingContactDisambiguation.get(phone);
+    if (!pending) return null;
+
+    // Verifica se expirou (2 minutos)
+    if (Date.now() - pending.timestamp > this.CONTACT_DISAMBIGUATION_TIMEOUT_MS) {
+      this.pendingContactDisambiguation.delete(phone);
+      this.logger.log(`Estado de desambiguação de contato expirado para ${phone}`);
+      return null;
+    }
+
+    return { options: pending.options, type: pending.type };
+  }
+
+  /**
+   * Limpa estado de desambiguação de contatos
+   */
+  private clearPendingContactDisambiguation(phone: string): void {
+    this.pendingContactDisambiguation.delete(phone);
+    this.logger.log(`Estado de desambiguação de contato limpo para ${phone}`);
+  }
+
+  /**
+   * Envia mensagem de desambiguação de contatos
+   */
+  private async sendContactDisambiguationMessage(
+    phone: string,
+    contacts: Array<{
+      id: string;
+      name: string;
+      professionalInfo: string | null;
+      relationshipContext: string | null;
+    }>,
+    type: 'update',
+  ): Promise<void> {
+    const action = type === 'update' ? 'atualizar' : 'ver';
+
+    let message = `Encontrei ${contacts.length} contatos:\n\n`;
+
+    contacts.forEach((c, i) => {
+      const context = c.professionalInfo || c.relationshipContext || '';
+      const emoji = ['1️⃣', '2️⃣', '3️⃣', '4️⃣', '5️⃣'][i] || `${i + 1}.`;
+      message += `${emoji} *${c.name}*`;
+      if (context) {
+        // Trunca contexto se muito longo
+        const truncatedContext = context.length > 40 ? context.substring(0, 40) + '...' : context;
+        message += ` - ${truncatedContext}`;
+      }
+      message += '\n';
+    });
+
+    message += `\nQual você quer ${action}? Responda com o número.`;
+
+    await this.sendTextMessage(phone, message);
+  }
+
   /**
    * Processa resposta de atualização de contato
    */
@@ -2042,7 +2182,7 @@ export class WhatsappService {
       location: extractedData.location || undefined,
       professionalInfo: extractedData.professionalInfo || undefined,
       relationshipContext: extractedData.relationshipContext || undefined,
-      context: transcription,
+      notes: extractedData.notes || undefined,
       rawTranscription: transcription,
     });
 
@@ -2549,6 +2689,35 @@ export class WhatsappService {
       return sent;
     } catch (error) {
       this.logger.error(`Erro ao enviar notificação de escassez: ${error.message}`);
+      return false;
+    }
+  }
+
+  /**
+   * Envia notificação de selo institucional quando um grupo adiciona um contato
+   * O selo ficará visível para outros membros quando o usuário se cadastrar
+   */
+  async sendSealNotification(phone: string, groupName: string): Promise<boolean> {
+    if (!phone) {
+      this.logger.warn('Telefone não informado para notificação de selo');
+      return false;
+    }
+
+    const message =
+      `🏅 O grupo *${groupName}* adicionou um selo ao seu contato!\n\n` +
+      `O selo institucional ficará visível para outros membros assim que você se cadastrar.\n\n` +
+      `Responda qualquer mensagem para começar seu cadastro.`;
+
+    try {
+      const sent = await this.sendTextMessage(phone, message);
+
+      if (sent) {
+        this.logger.log(`Notificação de selo enviada para ${phone}: ${groupName}`);
+      }
+
+      return sent;
+    } catch (error) {
+      this.logger.error(`Erro ao enviar notificação de selo: ${error.message}`);
       return false;
     }
   }

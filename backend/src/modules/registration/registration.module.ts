@@ -3,9 +3,10 @@ import { RegistrationService } from './registration.service';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
 import { SettingsModule } from '../settings/settings.module';
 import { AIModule } from '../ai/ai.module';
+import { TagsModule } from '../tags/tags.module';
 
 @Module({
-  imports: [forwardRef(() => WhatsappModule), SettingsModule, AIModule],
+  imports: [forwardRef(() => WhatsappModule), SettingsModule, AIModule, TagsModule],
   providers: [RegistrationService],
   exports: [RegistrationService],
 })

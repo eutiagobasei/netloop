@@ -2,7 +2,9 @@ import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { ExtractionService } from '../ai/services/extraction.service';
+import { TagsService } from '../tags/tags.service';
 import { PhoneUtil } from '../../common/utils/phone.util';
+import { TagType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -34,6 +36,7 @@ export class RegistrationService {
     @Inject(forwardRef(() => EvolutionService))
     private readonly evolutionService: EvolutionService,
     private readonly extractionService: ExtractionService,
+    private readonly tagsService: TagsService,
   ) {}
 
   /**
@@ -253,6 +256,9 @@ Caso contrário, me passa outro email?`;
       },
     });
 
+    // Processa convites de grupo pendentes para este telefone
+    await this.processPendingGroupInvites(user.id, formattedPhone);
+
     // Marca fluxo como completo
     await this.prisma.userRegistrationFlow.update({
       where: { id: flowId },
@@ -299,5 +305,77 @@ Agora é só me mandar áudios ou textos sobre pessoas que conheceu! 🚀`;
     }
 
     return result.count;
+  }
+
+  /**
+   * Processa convites de grupo pendentes para um usuário recém-cadastrado
+   * Converte invites em memberships e aplica tags institucionais
+   */
+  private async processPendingGroupInvites(userId: string, phone: string): Promise<void> {
+    const invites = await this.prisma.groupInvite.findMany({
+      where: {
+        phone,
+        status: { in: ['PENDING', 'NOTIFIED'] },
+      },
+      include: {
+        group: {
+          include: {
+            tags: {
+              where: { type: TagType.INSTITUTIONAL },
+              select: { id: true },
+            },
+          },
+        },
+      },
+    });
+
+    if (invites.length === 0) {
+      return;
+    }
+
+    this.logger.log(
+      `Processando ${invites.length} convites de grupo para usuário ${userId} (${phone})`,
+    );
+
+    for (const invite of invites) {
+      try {
+        // Cria membership
+        await this.prisma.groupMember.create({
+          data: {
+            userId,
+            groupId: invite.groupId,
+            isAdmin: false,
+          },
+        });
+
+        // Aplica tag institucional nos contatos do usuário
+        const institutionalTag = invite.group.tags[0];
+        if (institutionalTag) {
+          await this.tagsService.applyTagToAllUserContacts(userId, institutionalTag.id);
+        }
+
+        // Atualiza status do convite para ACCEPTED
+        await this.prisma.groupInvite.update({
+          where: { id: invite.id },
+          data: { status: 'ACCEPTED' },
+        });
+
+        this.logger.log(
+          `Convite convertido em membership: usuário ${userId} → grupo ${invite.group.name}`,
+        );
+      } catch (error) {
+        // Pode haver race condition se o usuário já foi adicionado por outro caminho
+        if ((error as any).code === 'P2002') {
+          this.logger.warn(`Usuário ${userId} já é membro do grupo ${invite.groupId}`);
+          // Ainda assim, marca o convite como aceito
+          await this.prisma.groupInvite.update({
+            where: { id: invite.id },
+            data: { status: 'ACCEPTED' },
+          });
+        } else {
+          this.logger.error(`Erro ao processar convite ${invite.id}: ${error}`);
+        }
+      }
+    }
   }
 }

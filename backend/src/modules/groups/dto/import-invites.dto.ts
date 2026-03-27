@@ -49,8 +49,11 @@ export class ImportInvitesDto {
 }
 
 export class ImportInvitesResponseDto {
-  @ApiProperty({ example: 10, description: 'Novos convites criados' })
+  @ApiProperty({ example: 10, description: 'Novos convites criados (não-usuários)' })
   created: number;
+
+  @ApiProperty({ example: 3, description: 'Usuários existentes adicionados diretamente' })
+  addedDirectly: number;
 
   @ApiProperty({ example: 2, description: 'Convites duplicados (já existiam)' })
   duplicates: number;

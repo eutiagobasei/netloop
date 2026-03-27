@@ -237,10 +237,11 @@ export class ContactsService {
         return;
       }
 
-      // Concatena informações relevantes para o embedding - simplificado para name + context
+      // Concatena informações relevantes para o embedding
       const textParts = [
         contactData.name,
-        contactData.context,
+        contactData.professionalInfo,
+        contactData.relationshipContext,
         contactData.notes,
         contactData.location,
       ].filter(Boolean);
@@ -273,8 +274,9 @@ export class ContactsService {
       ...(search && {
         OR: [
           { name: { contains: search, mode: 'insensitive' as const } },
-          { context: { contains: search, mode: 'insensitive' as const } },
           { notes: { contains: search, mode: 'insensitive' as const } },
+          { professionalInfo: { contains: search, mode: 'insensitive' as const } },
+          { relationshipContext: { contains: search, mode: 'insensitive' as const } },
         ],
       }),
     };
@@ -385,7 +387,7 @@ export class ContactsService {
     });
 
     // Regenerar embedding se campos relevantes foram atualizados
-    const relevantFields = ['name', 'location', 'context', 'notes'];
+    const relevantFields = ['name', 'location', 'professionalInfo', 'relationshipContext', 'notes'];
     const hasRelevantChange = relevantFields.some(
       (field) => dto[field as keyof UpdateContactDto] !== undefined,
     );
@@ -394,7 +396,8 @@ export class ContactsService {
       this.generateEmbeddingForContact(id, {
         name: contact.name,
         location: contact.location || undefined,
-        context: contact.context || undefined,
+        professionalInfo: (contact as any).professionalInfo || undefined,
+        relationshipContext: (contact as any).relationshipContext || undefined,
         notes: contact.notes || undefined,
       });
     }
@@ -485,7 +488,8 @@ export class ContactsService {
         id: true,
         name: true,
         location: true,
-        context: true,
+        professionalInfo: true,
+        relationshipContext: true,
         notes: true,
       },
     });
@@ -496,7 +500,8 @@ export class ContactsService {
       await this.generateEmbeddingForContact(contact.id, {
         name: contact.name,
         location: contact.location || undefined,
-        context: contact.context || undefined,
+        professionalInfo: contact.professionalInfo || undefined,
+        relationshipContext: contact.relationshipContext || undefined,
         notes: contact.notes || undefined,
       });
     }
@@ -918,7 +923,7 @@ export class ContactsService {
   }
 
   /**
-   * Busca texto livre em context/notes para serviço/produto
+   * Busca texto livre em professionalInfo/relationshipContext/notes para serviço/produto
    */
   private async searchByTextForService(
     ownerId: string,
@@ -931,7 +936,8 @@ export class ContactsService {
       where: {
         ownerId,
         OR: keywords.flatMap((keyword) => [
-          { context: { contains: keyword, mode: 'insensitive' } },
+          { professionalInfo: { contains: keyword, mode: 'insensitive' } },
+          { relationshipContext: { contains: keyword, mode: 'insensitive' } },
           { notes: { contains: keyword, mode: 'insensitive' } },
           { name: { contains: keyword, mode: 'insensitive' } },
         ]),
@@ -943,6 +949,52 @@ export class ContactsService {
     });
 
     return contacts.map(this.formatContactResponse);
+  }
+
+  /**
+   * Busca TODOS os contatos com nome similar (não apenas o primeiro)
+   * Usado para desambiguação quando múltiplos matches
+   * PUBLIC: usado pelo WhatsappService para desambiguação em update_contact
+   */
+  async searchByNameSimilarMultiple(
+    ownerId: string,
+    searchName: string,
+    limit = 5,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      phone: string | null;
+      email: string | null;
+      professionalInfo: string | null;
+      relationshipContext: string | null;
+    }>
+  > {
+    const results = await this.prisma.$queryRaw<
+      Array<{
+        id: string;
+        name: string;
+        phone: string | null;
+        email: string | null;
+        professionalInfo: string | null;
+        relationshipContext: string | null;
+        similarity: number;
+      }>
+    >`
+      SELECT
+        id, name, phone, email, "professionalInfo", "relationshipContext",
+        similarity(name, ${searchName}) as similarity
+      FROM contacts
+      WHERE "ownerId" = ${ownerId}
+        AND (
+          similarity(name, ${searchName}) > 0.3
+          OR name ILIKE ${'%' + searchName + '%'}
+        )
+      ORDER BY similarity(name, ${searchName}) DESC
+      LIMIT ${limit}
+    `;
+
+    return results.map(({ similarity, ...rest }) => rest);
   }
 
   /**
@@ -1068,8 +1120,9 @@ export class ContactsService {
         ownerId,
         OR: [
           { name: { contains: query, mode: 'insensitive' } },
-          { context: { contains: query, mode: 'insensitive' } },
           { notes: { contains: query, mode: 'insensitive' } },
+          { professionalInfo: { contains: query, mode: 'insensitive' } },
+          { relationshipContext: { contains: query, mode: 'insensitive' } },
         ],
       },
       include: {
@@ -1120,8 +1173,12 @@ export class ContactsService {
       parts.push(`📍 ${contact.location}`);
     }
 
-    if (contact.context) {
-      parts.push(`\n\n📝 _${contact.context}_`);
+    if (contact.professionalInfo) {
+      parts.push(`\n\n💼 _${contact.professionalInfo}_`);
+    }
+
+    if (contact.relationshipContext) {
+      parts.push(`\n📍 _${contact.relationshipContext}_`);
     }
 
     if (contact.phone) {
@@ -1217,7 +1274,8 @@ export class ContactsService {
     this.generateEmbeddingForContact(contact.id, {
       name: contact.name,
       location: contact.location || undefined,
-      context: contact.context || undefined,
+      professionalInfo: (contact as any).professionalInfo || undefined,
+      relationshipContext: (contact as any).relationshipContext || undefined,
     });
 
     return this.formatContactResponse(contact);

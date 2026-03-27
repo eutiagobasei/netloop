@@ -480,7 +480,8 @@ export class ConnectionsService {
 
     // Cria condições OR para cada palavra em cada campo
     const searchConditions = searchWords.flatMap((word) => [
-      { context: { contains: word, mode: 'insensitive' as const } },
+      { professionalInfo: { contains: word, mode: 'insensitive' as const } },
+      { relationshipContext: { contains: word, mode: 'insensitive' as const } },
       { notes: { contains: word, mode: 'insensitive' as const } },
       { name: { contains: word, mode: 'insensitive' as const } },
     ]);
@@ -492,7 +493,8 @@ export class ConnectionsService {
           searchConditions.length > 0
             ? searchConditions
             : [
-                { context: { contains: search, mode: 'insensitive' as const } },
+                { professionalInfo: { contains: search, mode: 'insensitive' as const } },
+                { relationshipContext: { contains: search, mode: 'insensitive' as const } },
                 { notes: { contains: search, mode: 'insensitive' as const } },
               ],
       },

@@ -374,7 +374,8 @@ model MediaUpload {
 
 enum InviteStatus {
   PENDING       // Aguardando envio de convite
-  INVITED       // Convite enviado via WhatsApp
+  NOTIFIED      // Notificação enviada, aguardando cadastro
+  INVITED       // Convite enviado via WhatsApp (legacy)
   ACCEPTED      // Usuário se cadastrou
   REJECTED      // Usuário recusou
 }
@@ -384,6 +385,7 @@ model GroupInvite {
   groupId            String
   name               String
   phone              String
+  email              String?      // Email do convidado
   company            String?
   companyDescription String?
   status             InviteStatus @default(PENDING)
