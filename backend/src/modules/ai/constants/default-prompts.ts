@@ -192,13 +192,12 @@ Se não conseguir identificar, responda "null".`,
 
 CAMPOS A EXTRAIR:
 - name: Nome completo (nome + sobrenome quando disponível)
-- company: Empresa onde trabalha
-- position: Cargo ou função
 - phone: Telefone (OBRIGATÓRIO para salvar - veja regras abaixo)
 - email: Email
 - location: Cidade/Estado/País
-- context: Resumo de como/onde se conheceram
-- tags: Lista de pontos de conexão e interesses
+- professionalInfo: Informações PROFISSIONAIS - cargo, empresa, especialidade, área de atuação
+- relationshipContext: Contexto do RELACIONAMENTO - como/onde se conheceram, quem indicou, evento
+- tags: Lista de tags relevantes (empresa, área, evento, etc)
 
 REGRAS DE TELEFONE (CRÍTICO):
 1. Aceite TODOS estes formatos brasileiros:
@@ -212,18 +211,37 @@ REGRAS DE TELEFONE (CRÍTICO):
 REGRAS DE EXTRAÇÃO:
 - Capture o nome EXATAMENTE como mencionado, com sobrenome
 - NÃO invente dados - deixe null se não estiver claro
-- Context deve ser útil: onde conheceu, evento, situação
-- Tags: priorize ONDE conheceu (evento, grupo, local), depois interesses/área
+- SEPARE bem professionalInfo (O QUE FAZ) de relationshipContext (COMO CONHECEU)
+- Tags: priorize empresa, área de atuação, evento onde conheceu
 
 EXEMPLOS DE EXTRAÇÃO:
-Texto: "João Silva da Tech Corp, 21 98765-4321, conheci na SIPAT"
-→ {"name": "João Silva", "company": "Tech Corp", "phone": "21987654321", "context": "Conheceu na SIPAT", "tags": ["SIPAT"]}
 
-Texto: "Maria, advogada, +55 11 99999-8888, especialista em direito trabalhista"
-→ {"name": "Maria", "position": "advogada", "phone": "5511999998888", "tags": ["direito trabalhista"]}
+Texto: "João Silva, CTO da Tech Corp, especialista em cloud, conheci na SIPAT 2024, 21 98765-4321"
+→ {
+  "name": "João Silva",
+  "phone": "21987654321",
+  "professionalInfo": "CTO da Tech Corp, especialista em cloud",
+  "relationshipContext": "Conheceu na SIPAT 2024",
+  "tags": ["cto", "tech-corp", "cloud", "sipat-2024"]
+}
 
-Texto: "Pedro Souza do Nubank"
-→ {"name": "Pedro Souza", "company": "Nubank", "phone": null, "context": "Telefone não informado"}
+Texto: "Maria, advogada trabalhista, +55 11 99999-8888, indicação do Pedro"
+→ {
+  "name": "Maria",
+  "phone": "5511999998888",
+  "professionalInfo": "Advogada trabalhista",
+  "relationshipContext": "Indicação do Pedro",
+  "tags": ["advogada", "trabalhista"]
+}
+
+Texto: "Pedro Souza, desenvolvedor no Nubank"
+→ {
+  "name": "Pedro Souza",
+  "phone": null,
+  "professionalInfo": "Desenvolvedor no Nubank",
+  "relationshipContext": null,
+  "tags": ["desenvolvedor", "nubank"]
+}
 
 Retorne APENAS um JSON válido com os campos. Não inclua explicações.`,
 

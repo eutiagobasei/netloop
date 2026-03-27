@@ -3,7 +3,9 @@ export interface ExtractedContactData {
   phone?: string;
   email?: string;
   location?: string;
-  context?: string; // Full context including company, position, how they met, etc.
+  professionalInfo?: string; // Cargo, empresa, especialidade
+  relationshipContext?: string; // Como/onde se conheceram
+  context?: string; // Legado - contexto geral (mantido para compatibilidade)
   tags?: string[];
   confidence?: number;
 }

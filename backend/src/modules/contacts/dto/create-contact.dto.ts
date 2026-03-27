@@ -58,9 +58,27 @@ export class CreateContactDto {
   notes?: string;
 
   @ApiProperty({
+    example: 'CTO da Tech Corp, especialista em cloud computing',
+    required: false,
+    description: 'Informações profissionais: cargo, empresa, especialidade',
+  })
+  @IsOptional()
+  @IsString()
+  professionalInfo?: string;
+
+  @ApiProperty({
+    example: 'Conheceu na SIPAT 2024, indicação do João',
+    required: false,
+    description: 'Contexto do relacionamento: como/onde se conheceram',
+  })
+  @IsOptional()
+  @IsString()
+  relationshipContext?: string;
+
+  @ApiProperty({
     example: 'CTO da Tech Corp, especialista em cloud computing, conheceu na SIPAT 2024',
     required: false,
-    description: 'Contexto completo sobre o contato (empresa, cargo, como se conheceram, etc.)',
+    description: 'Contexto geral (legado - usar professionalInfo e relationshipContext)',
   })
   @IsOptional()
   @IsString()

@@ -2040,7 +2040,8 @@ export class WhatsappService {
       phone: normalizedPhone,
       email: extractedData.email || undefined,
       location: extractedData.location || undefined,
-      notes: extractedData.context || undefined,
+      professionalInfo: extractedData.professionalInfo || undefined,
+      relationshipContext: extractedData.relationshipContext || undefined,
       context: transcription,
       rawTranscription: transcription,
     });
@@ -2053,7 +2054,7 @@ export class WhatsappService {
         fromUserId: userId,
         contactId: contact.id,
         strength: 'MODERATE',
-        context: extractedData.context || transcription,
+        context: extractedData.relationshipContext || extractedData.professionalInfo || transcription,
       },
     });
 

@@ -204,8 +204,14 @@ export class ContactsService {
     this.generateEmbeddingForContact(contact.id, contactData);
 
     // Extrair e atribuir tags automaticamente se tiver contexto
-    if (contactData.context) {
-      this.extractAndAssignTags(ownerId, contact.id, contactData).catch((err) =>
+    const hasContext = contactData.context || contactData.professionalInfo || contactData.relationshipContext;
+    if (hasContext) {
+      this.extractAndAssignTags(ownerId, contact.id, {
+        ...contactData,
+        context: [contactData.professionalInfo, contactData.relationshipContext, contactData.context]
+          .filter(Boolean)
+          .join(' | '),
+      }).catch((err) =>
         this.logger.error(`Erro ao extrair tags: ${err.message}`),
       );
     }

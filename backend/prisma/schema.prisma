@@ -124,8 +124,10 @@ model Contact {
   phone       String?
   email       String?
   location    String?
-  notes       String?  @db.Text
-  context     String?  @db.Text  // Contexto extraído pela IA (principal campo para busca)
+  notes       String?  @db.Text  // Anotações livres do usuário
+  context     String?  @db.Text  // Contexto geral (mantido para compatibilidade)
+  professionalInfo    String?  @db.Text  // Cargo, empresa, especialidade
+  relationshipContext String?  @db.Text  // Como/onde se conheceram
   rawTranscription String? @db.Text // Transcrição original do áudio
   embedding   Unsupported("vector(1536)")? // Embedding para busca semântica
   createdAt   DateTime @default(now())
