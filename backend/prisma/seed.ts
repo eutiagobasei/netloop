@@ -207,34 +207,49 @@ async function main() {
   });
   console.log('✅ Usuário de teste criado:', user.email);
 
-  // Cria grupo SOMA
-  const group = await prisma.club.upsert({
+  // Cria clube SOMA
+  const club = await prisma.club.upsert({
     where: { slug: 'soma' },
     update: {},
     create: {
       name: 'SOMA',
       slug: 'soma',
       description: 'Comunidade de empreendedores',
+      isVerified: true,
     },
   });
-  console.log('✅ Grupo criado:', group.name);
+  console.log('✅ Clube criado:', club.name);
 
-  // Adiciona usuário ao grupo
+  // Cria admin do clube SOMA
+  const clubAdminPassword = await bcrypt.hash('soma123', 12);
+  const clubAdmin = await prisma.clubAdmin.upsert({
+    where: { clubId_email: { clubId: club.id, email: 'admin@soma.club' } },
+    update: {},
+    create: {
+      clubId: club.id,
+      email: 'admin@soma.club',
+      password: clubAdminPassword,
+      name: 'Admin SOMA',
+    },
+  });
+  console.log('✅ Club Admin criado:', clubAdmin.email);
+
+  // Adiciona usuário ao clube
   await prisma.clubMember.upsert({
     where: {
       userId_clubId: {
         userId: user.id,
-        clubId: group.id,
+        clubId: club.id,
       },
     },
     update: {},
     create: {
       userId: user.id,
-      clubId: group.id,
+      clubId: club.id,
       isAdmin: false,
     },
   });
-  console.log('✅ Usuário adicionado ao grupo SOMA');
+  console.log('✅ Usuário adicionado ao clube SOMA');
 
   // Cria tags livres (usando findFirst + create para evitar problemas com null no unique)
   const tagsData = [
@@ -268,11 +283,11 @@ async function main() {
   }
   console.log('✅ Tags livres criadas');
 
-  // Cria tag institucional para o grupo SOMA
+  // Cria tag institucional para o clube SOMA
   const existingInstitutionalTag = await prisma.tag.findFirst({
     where: {
       slug: 'membro-soma',
-      clubId: group.id,
+      clubId: club.id,
     },
   });
 
@@ -283,7 +298,7 @@ async function main() {
         slug: 'membro-soma',
         color: '#ef4444',
         type: TagType.INSTITUTIONAL,
-        clubId: group.id,
+        clubId: club.id,
         createdById: admin.id,
       },
     });
@@ -392,6 +407,7 @@ async function main() {
   console.log('   Super Admin (PROD): supa@hprod.io / [ver .env.prod]');
   console.log('   Admin (DEV): admin@netloop.com / admin123');
   console.log('   Usuário: teste@netloop.com / user123');
+  console.log('   Club Admin SOMA: admin@soma.club / soma123 (login em /club-login)');
 }
 
 main()

@@ -1,48 +1,43 @@
 'use client'
 
 import { useState, useRef, useCallback } from 'react'
+import { useParams } from 'next/navigation'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Building2, Plus, Search, Users, Trash2, UserPlus, Upload, Download, FileSpreadsheet, X, AlertCircle, CheckCircle, Shield } from 'lucide-react'
-import Link from 'next/link'
-import { Header } from '@/components/layout/header'
+import {
+  Users,
+  UserPlus,
+  Search,
+  Upload,
+  Download,
+  X,
+  AlertCircle,
+  CheckCircle,
+  Trash2,
+  FileSpreadsheet,
+} from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
 import * as XLSX from 'xlsx'
 
-interface Club {
+interface Member {
   id: string
-  name: string
-  slug: string
-  description: string | null
-  isActive: boolean
-  createdAt: string
-  _count?: {
-    members: number
-    tags: number
+  userId: string
+  isAdmin: boolean
+  joinedAt: string
+  user: {
+    id: string
+    name: string
+    email: string
+    phone: string | null
   }
 }
 
-type ClubsResponse = Club[]
-
-interface UserData {
+interface ClubDetails {
   id: string
   name: string
-  email: string
-}
-
-interface UsersResponse {
-  data: UserData[]
-}
-
-interface CreateClubDto {
-  name: string
-  description?: string
-}
-
-interface AddMemberDto {
-  userId: string
-  role: 'ADMIN' | 'MEMBER'
+  members: Member[]
+  _count: { members: number }
 }
 
 interface InviteItem {
@@ -50,94 +45,87 @@ interface InviteItem {
   phone: string
   company?: string
   companyDescription?: string
+  email?: string
   isValid: boolean
   error?: string
 }
 
 interface ImportResult {
   created: number
+  addedDirectly: number
   duplicates: number
   alreadyMembers: number
   errors: string[]
 }
 
-export default function ClubsPage() {
+export default function ClubMembersPage() {
+  const params = useParams()
+  const clubId = params.id as string
   const queryClient = useQueryClient()
+
   const [search, setSearch] = useState('')
-  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false)
-  const [selectedClubId, setSelectedClubId] = useState<string | null>(null)
-  const [newClubName, setNewClubName] = useState('')
-  const [newClubDescription, setNewClubDescription] = useState('')
-  const [selectedUserId, setSelectedUserId] = useState('')
-  const [memberRole, setMemberRole] = useState<'ADMIN' | 'MEMBER'>('MEMBER')
+  const [memberPhone, setMemberPhone] = useState('')
+  const [memberName, setMemberName] = useState('')
+  const [memberEmail, setMemberEmail] = useState('')
+  const [memberCompany, setMemberCompany] = useState('')
+
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
-  const [importClubId, setImportClubId] = useState<string | null>(null)
   const [importPreview, setImportPreview] = useState<InviteItem[]>([])
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { data: clubs = [], isLoading } = useQuery<ClubsResponse>({
-    queryKey: ['clubs'],
+  const { data: club, isLoading } = useQuery<ClubDetails>({
+    queryKey: ['club', clubId],
     queryFn: async () => {
-      const response = await api.get('/clubs')
+      const response = await api.get(`/clubs/${clubId}`)
       return response.data
-    },
-  })
-
-  const { data: usersData } = useQuery<UsersResponse>({
-    queryKey: ['users-for-clubs'],
-    queryFn: async () => {
-      const response = await api.get('/users', { params: { limit: 100 } })
-      return response.data
-    },
-    enabled: isAddMemberModalOpen,
-  })
-
-  const createClubMutation = useMutation({
-    mutationFn: async (dto: CreateClubDto) => {
-      const response = await api.post('/clubs', dto)
-      return response.data
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clubs'] })
-      setIsCreateModalOpen(false)
-      setNewClubName('')
-      setNewClubDescription('')
-    },
-    onError: (error: any) => {
-      alert(error.response?.data?.message || 'Erro ao criar grupo')
     },
   })
 
   const addMemberMutation = useMutation({
-    mutationFn: async ({ clubId, dto }: { clubId: string; dto: AddMemberDto }) => {
-      const response = await api.post(`/clubs/${clubId}/members`, dto)
+    mutationFn: async (dto: { phone: string; name: string; email?: string; company?: string }) => {
+      const response = await api.post(`/clubs/${clubId}/members/by-phone`, dto)
       return response.data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['clubs'] })
+      queryClient.invalidateQueries({ queryKey: ['club', clubId] })
       setIsAddMemberModalOpen(false)
-      setSelectedClubId(null)
-      setSelectedUserId('')
-      setMemberRole('MEMBER')
+      setMemberPhone('')
+      setMemberName('')
+      setMemberEmail('')
+      setMemberCompany('')
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Erro ao adicionar membro')
     },
   })
 
+  const removeMemberMutation = useMutation({
+    mutationFn: async (userId: string) => {
+      const response = await api.delete(`/clubs/${clubId}/members/${userId}`)
+      return response.data
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['club', clubId] })
+    },
+    onError: (error: any) => {
+      alert(error.response?.data?.message || 'Erro ao remover membro')
+    },
+  })
+
   const importInvitesMutation = useMutation({
-    mutationFn: async ({ clubId, invites }: { clubId: string; invites: InviteItem[] }) => {
+    mutationFn: async (invites: InviteItem[]) => {
       const response = await api.post(`/clubs/${clubId}/import-invites`, {
         invites: invites
           .filter((i) => i.isValid)
-          .map(({ name, phone, company, companyDescription }) => ({
+          .map(({ name, phone, company, companyDescription, email }) => ({
             name,
             phone: phone.replace(/\D/g, ''),
             company,
             companyDescription,
+            email,
           })),
       })
       return response.data as ImportResult
@@ -145,58 +133,19 @@ export default function ClubsPage() {
     onSuccess: (data) => {
       setImportResult(data)
       setImportPreview([])
+      queryClient.invalidateQueries({ queryKey: ['club', clubId] })
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Erro ao importar convites')
     },
   })
 
-  const filteredClubs = clubs.filter(
-    (club) =>
-      club.name.toLowerCase().includes(search.toLowerCase()) ||
-      club.slug.toLowerCase().includes(search.toLowerCase())
-  )
-
-  const handleCreateClub = () => {
-    if (!newClubName.trim()) {
-      alert('Nome do grupo é obrigatório')
-      return
-    }
-    createClubMutation.mutate({
-      name: newClubName,
-      description: newClubDescription || undefined,
-    })
-  }
-
-  const handleAddMember = () => {
-    if (!selectedClubId || !selectedUserId) {
-      alert('Selecione um usuário')
-      return
-    }
-    addMemberMutation.mutate({
-      clubId: selectedClubId,
-      dto: { userId: selectedUserId, role: memberRole },
-    })
-  }
-
-  const openAddMemberModal = (clubId: string) => {
-    setSelectedClubId(clubId)
-    setIsAddMemberModalOpen(true)
-  }
-
-  const openImportModal = (clubId: string) => {
-    setImportClubId(clubId)
-    setImportPreview([])
-    setImportResult(null)
-    setIsImportModalOpen(true)
-  }
-
-  const closeImportModal = () => {
-    setIsImportModalOpen(false)
-    setImportClubId(null)
-    setImportPreview([])
-    setImportResult(null)
-  }
+  const filteredMembers = club?.members?.filter(
+    (member) =>
+      member.user.name.toLowerCase().includes(search.toLowerCase()) ||
+      member.user.email.toLowerCase().includes(search.toLowerCase()) ||
+      (member.user.phone && member.user.phone.includes(search))
+  ) || []
 
   const normalizePhone = (phone: string): string => {
     return phone?.toString().replace(/\D/g, '') || ''
@@ -227,6 +176,7 @@ export default function ClubsPage() {
           const company = String(arr[1] || '').trim()
           const phone = normalizePhone(String(arr[2] || ''))
           const companyDescription = String(arr[3] || '').trim()
+          const email = String(arr[4] || '').trim()
 
           const isValid = name.length > 0 && validatePhone(phone)
           const error = !name ? 'Nome obrigatório' : !validatePhone(phone) ? 'Telefone inválido' : undefined
@@ -236,6 +186,7 @@ export default function ClubsPage() {
             phone,
             company: company || undefined,
             companyDescription: companyDescription || undefined,
+            email: email || undefined,
             isValid,
             error,
           }
@@ -279,24 +230,48 @@ export default function ClubsPage() {
 
   const downloadTemplate = () => {
     const wsData = [
-      ['Nome', 'Empresa', 'Número', 'Descrição da Empresa'],
-      ['João Silva', 'Tech Corp', '11999999999', 'Empresa de tecnologia'],
-      ['Maria Santos', 'Design Lab', '21888888888', 'Estúdio de design'],
+      ['Nome', 'Empresa', 'Telefone', 'Descrição da Empresa', 'Email'],
+      ['João Silva', 'Tech Corp', '11999999999', 'Empresa de tecnologia', 'joao@email.com'],
+      ['Maria Santos', 'Design Lab', '21888888888', 'Estúdio de design', 'maria@email.com'],
     ]
     const ws = XLSX.utils.aoa_to_sheet(wsData)
     const wb = XLSX.utils.book_new()
-    XLSX.utils.book_append_sheet(wb, ws, 'Convites')
+    XLSX.utils.book_append_sheet(wb, ws, 'Membros')
     XLSX.writeFile(wb, 'modelo_importacao_membros.xlsx')
   }
 
   const handleImport = () => {
-    if (!importClubId) return
     const validInvites = importPreview.filter((i) => i.isValid)
     if (validInvites.length === 0) {
       alert('Nenhum registro válido para importar')
       return
     }
-    importInvitesMutation.mutate({ clubId: importClubId, invites: importPreview })
+    importInvitesMutation.mutate(importPreview)
+  }
+
+  const closeImportModal = () => {
+    setIsImportModalOpen(false)
+    setImportPreview([])
+    setImportResult(null)
+  }
+
+  const handleAddMember = () => {
+    if (!memberPhone.trim() || !memberName.trim()) {
+      alert('Nome e telefone são obrigatórios')
+      return
+    }
+    addMemberMutation.mutate({
+      phone: memberPhone,
+      name: memberName,
+      email: memberEmail || undefined,
+      company: memberCompany || undefined,
+    })
+  }
+
+  const handleRemoveMember = (userId: string, userName: string) => {
+    if (confirm(`Tem certeza que deseja remover ${userName} do clube?`)) {
+      removeMemberMutation.mutate(userId)
+    }
   }
 
   return (
@@ -304,40 +279,62 @@ export default function ClubsPage() {
       {/* Background decorative elements */}
       <div className="fixed inset-0 bg-grid-pattern pointer-events-none opacity-50" />
       <div className="fixed top-0 left-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
-      <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
+      <div className="fixed bottom-0 right-1/4 w-96 h-96 bg-purple-500/10 rounded-full blur-3xl pointer-events-none" />
 
       <div className="relative z-10">
-        <Header
-          title="Clubes / Empresas Patrocinadoras"
-          description="Gerencie clubes e suas tags oficiais"
-        />
+        {/* Header */}
+        <div className="border-b border-white/10 bg-dark-bg/80 backdrop-blur-xl">
+          <div className="px-6 py-6">
+            <div className="flex items-center gap-4">
+              <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-gradient-to-br from-indigo-500 to-purple-500 text-xl font-bold text-white shadow-lg">
+                <Users className="h-7 w-7" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold text-white">Membros do Clube</h1>
+                <p className="text-sm text-gray-400 mt-1">
+                  Gerencie os membros e convites pendentes
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
 
         <div className="p-6 space-y-6">
-          {/* Barra de busca e botão criar */}
-          <div className="glass-card p-4 flex items-center justify-between gap-4">
-            <div className="relative max-w-md flex-1">
+          {/* Actions bar */}
+          <div className="glass-card p-4 flex items-center justify-between gap-4 flex-wrap">
+            <div className="relative max-w-md flex-1 min-w-[200px]">
               <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" />
               <Input
-                placeholder="Buscar por nome ou slug..."
+                placeholder="Buscar por nome, email ou telefone..."
                 value={search}
                 onChange={(e) => setSearch(e.target.value)}
                 className="pl-10 bg-white/5 border-white/10 text-white placeholder:text-gray-500"
               />
             </div>
-            <Button
-              onClick={() => setIsCreateModalOpen(true)}
-              className="gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white"
-            >
-              <Plus className="h-4 w-4" />
-              Novo Clube
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                onClick={() => setIsImportModalOpen(true)}
+                className="gap-2 bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
+              >
+                <Upload className="h-4 w-4" />
+                Importar
+              </Button>
+              <Button
+                onClick={() => setIsAddMemberModalOpen(true)}
+                className="gap-2 bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white"
+              >
+                <UserPlus className="h-4 w-4" />
+                Adicionar Membro
+              </Button>
+            </div>
           </div>
 
-          {/* Tabela de clubes */}
+          {/* Members Table */}
           <div className="glass-card overflow-hidden">
             {isLoading ? (
               <div className="flex items-center justify-center p-12">
-                <div className="h-8 w-8 animate-spin rounded-full border-4 border-blue-500 border-t-transparent" />
+                <div className="h-8 w-8 animate-spin rounded-full border-4 border-indigo-500 border-t-transparent" />
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -345,22 +342,19 @@ export default function ClubsPage() {
                   <thead className="border-b border-white/10 bg-white/5">
                     <tr>
                       <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                        Clube
+                        Membro
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                        Slug
+                        Email
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                        Status
+                        Telefone
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                        Membros
+                        Entrada
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                        Tags
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                        Criado em
+                        Papel
                       </th>
                       <th className="px-6 py-4 text-right text-xs font-medium uppercase tracking-wider text-gray-400">
                         Ações
@@ -368,96 +362,58 @@ export default function ClubsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {filteredClubs.map((club) => (
-                      <tr key={club.id} className="hover:bg-white/5 transition-colors">
+                    {filteredMembers.map((member) => (
+                      <tr key={member.id} className="hover:bg-white/5 transition-colors">
                         <td className="whitespace-nowrap px-6 py-4">
                           <div className="flex items-center gap-3">
-                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-400 text-sm font-medium text-white shadow-lg glow-purple">
-                              <Building2 className="h-5 w-5" />
+                            <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-400 text-sm font-medium text-white">
+                              {member.user.name.charAt(0).toUpperCase()}
                             </div>
-                            <div>
-                              <p className="font-medium text-white">{club.name}</p>
-                              {club.description && (
-                                <p className="text-sm text-gray-400 truncate max-w-xs">
-                                  {club.description}
-                                </p>
-                              )}
-                            </div>
+                            <span className="text-sm font-medium text-white">{member.user.name}</span>
                           </div>
                         </td>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <span className="text-sm text-gray-400 bg-white/5 px-2 py-1 rounded font-mono">
-                            {club.slug}
-                          </span>
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">
+                          {member.user.email}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">
+                          {member.user.phone || '-'}
+                        </td>
+                        <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">
+                          {new Date(member.joinedAt).toLocaleDateString('pt-BR')}
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">
                           <span
                             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                              club.isActive
-                                ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                                : 'bg-red-500/20 text-red-400 border border-red-500/30'
+                              member.isAdmin
+                                ? 'bg-indigo-500/20 text-indigo-400 border border-indigo-500/30'
+                                : 'bg-white/10 text-gray-300 border border-white/20'
                             }`}
                           >
-                            <span className={`h-1.5 w-1.5 rounded-full ${club.isActive ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-                            {club.isActive ? 'Ativo' : 'Inativo'}
+                            {member.isAdmin ? 'Admin' : 'Membro'}
                           </span>
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <span className="text-sm text-gray-300 bg-white/5 px-2 py-1 rounded">
-                            {club._count?.members ?? 0}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <span className="text-sm text-gray-300 bg-white/5 px-2 py-1 rounded">
-                            {club._count?.tags ?? 0}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">
-                          {new Date(club.createdAt).toLocaleDateString('pt-BR')}
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            <Link href={`/clubs/${club.id}/admins`}>
-                              <Button
-                                variant="outline"
-                                size="sm"
-                                className="gap-2 bg-indigo-500/10 border-indigo-500/30 text-indigo-400 hover:bg-indigo-500/20"
-                              >
-                                <Shield className="h-4 w-4" />
-                                Admins
-                              </Button>
-                            </Link>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openImportModal(club.id)}
-                              className="gap-2 bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
-                            >
-                              <Upload className="h-4 w-4" />
-                              Importar
-                            </Button>
-                            <Button
-                              variant="outline"
-                              size="sm"
-                              onClick={() => openAddMemberModal(club.id)}
-                              className="gap-2 bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
-                            >
-                              <UserPlus className="h-4 w-4" />
-                              Adicionar
-                            </Button>
-                          </div>
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => handleRemoveMember(member.user.id, member.user.name)}
+                            disabled={removeMemberMutation.isPending}
+                            className="gap-2 bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20"
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
                         </td>
                       </tr>
                     ))}
                   </tbody>
                 </table>
 
-                {filteredClubs.length === 0 && (
+                {filteredMembers.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                     <div className="p-4 rounded-full bg-white/5 mb-4">
-                      <Building2 className="h-12 w-12" />
+                      <Users className="h-12 w-12" />
                     </div>
-                    <p>Nenhum grupo encontrado</p>
+                    <p>Nenhum membro encontrado</p>
                   </div>
                 )}
               </div>
@@ -465,94 +421,55 @@ export default function ClubsPage() {
           </div>
         </div>
 
-        {/* Modal Criar Clube */}
-        {isCreateModalOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
-            <div className="w-full max-w-md glass-card p-6">
-              <h2 className="mb-4 text-lg font-semibold text-white">Criar Novo Clube</h2>
-              <div className="space-y-4">
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-300">
-                    Nome do Clube *
-                  </label>
-                  <Input
-                    value={newClubName}
-                    onChange={(e) => setNewClubName(e.target.value)}
-                    placeholder="Ex: Empresa XYZ"
-                    className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
-                  />
-                </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-300">
-                    Descrição
-                  </label>
-                  <Input
-                    value={newClubDescription}
-                    onChange={(e) => setNewClubDescription(e.target.value)}
-                    placeholder="Descrição opcional"
-                    className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
-                  />
-                </div>
-              </div>
-              <div className="mt-6 flex justify-end gap-3">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setIsCreateModalOpen(false)
-                    setNewClubName('')
-                    setNewClubDescription('')
-                  }}
-                  className="bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
-                >
-                  Cancelar
-                </Button>
-                <Button
-                  onClick={handleCreateClub}
-                  disabled={createClubMutation.isPending}
-                  className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white"
-                >
-                  {createClubMutation.isPending ? 'Criando...' : 'Criar Clube'}
-                </Button>
-              </div>
-            </div>
-          </div>
-        )}
-
         {/* Modal Adicionar Membro */}
         {isAddMemberModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
             <div className="w-full max-w-md glass-card p-6">
-              <h2 className="mb-4 text-lg font-semibold text-white">Adicionar Membro ao Clube</h2>
+              <h2 className="mb-4 text-lg font-semibold text-white">Adicionar Membro</h2>
               <div className="space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-300">
-                    Usuário *
+                    Nome *
                   </label>
-                  <select
-                    value={selectedUserId}
-                    onChange={(e) => setSelectedUserId(e.target.value)}
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
-                  >
-                    <option value="" className="bg-gray-900">Selecione um usuário</option>
-                    {usersData?.data?.map((user) => (
-                      <option key={user.id} value={user.id} className="bg-gray-900">
-                        {user.name} ({user.email})
-                      </option>
-                    ))}
-                  </select>
+                  <Input
+                    value={memberName}
+                    onChange={(e) => setMemberName(e.target.value)}
+                    placeholder="Nome completo"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                  />
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-300">
-                    Papel no Clube *
+                    Telefone *
                   </label>
-                  <select
-                    value={memberRole}
-                    onChange={(e) => setMemberRole(e.target.value as 'ADMIN' | 'MEMBER')}
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
-                  >
-                    <option value="MEMBER" className="bg-gray-900">Membro</option>
-                    <option value="ADMIN" className="bg-gray-900">Administrador do Clube</option>
-                  </select>
+                  <Input
+                    value={memberPhone}
+                    onChange={(e) => setMemberPhone(e.target.value)}
+                    placeholder="11999999999"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-300">
+                    Email
+                  </label>
+                  <Input
+                    value={memberEmail}
+                    onChange={(e) => setMemberEmail(e.target.value)}
+                    placeholder="email@exemplo.com"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-sm font-medium text-gray-300">
+                    Empresa
+                  </label>
+                  <Input
+                    value={memberCompany}
+                    onChange={(e) => setMemberCompany(e.target.value)}
+                    placeholder="Nome da empresa"
+                    className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
+                  />
                 </div>
               </div>
               <div className="mt-6 flex justify-end gap-3">
@@ -560,9 +477,10 @@ export default function ClubsPage() {
                   variant="outline"
                   onClick={() => {
                     setIsAddMemberModalOpen(false)
-                    setSelectedClubId(null)
-                    setSelectedUserId('')
-                    setMemberRole('MEMBER')
+                    setMemberPhone('')
+                    setMemberName('')
+                    setMemberEmail('')
+                    setMemberCompany('')
                   }}
                   className="bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
                 >
@@ -571,7 +489,7 @@ export default function ClubsPage() {
                 <Button
                   onClick={handleAddMember}
                   disabled={addMemberMutation.isPending}
-                  className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white"
+                  className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white"
                 >
                   {addMemberMutation.isPending ? 'Adicionando...' : 'Adicionar'}
                 </Button>
@@ -603,6 +521,9 @@ export default function ClubsPage() {
                   </div>
                   <div className="text-sm text-emerald-400 space-y-1">
                     <p>{importResult.created} convites criados</p>
+                    {importResult.addedDirectly > 0 && (
+                      <p>{importResult.addedDirectly} membros adicionados diretamente</p>
+                    )}
                     {importResult.duplicates > 0 && (
                       <p>{importResult.duplicates} duplicados (já existiam)</p>
                     )}
@@ -631,7 +552,7 @@ export default function ClubsPage() {
                 <div className="space-y-4">
                   <div
                     className={`border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
-                      isDragging ? 'border-blue-500 bg-blue-500/10' : 'border-white/20 hover:border-white/40 hover:bg-white/5'
+                      isDragging ? 'border-indigo-500 bg-indigo-500/10' : 'border-white/20 hover:border-white/40 hover:bg-white/5'
                     }`}
                     onDrop={handleDrop}
                     onDragOver={handleDragOver}
@@ -663,28 +584,6 @@ export default function ClubsPage() {
                       <Download className="h-4 w-4" />
                       Baixar modelo de planilha
                     </Button>
-                  </div>
-
-                  <div className="text-sm text-gray-400 bg-white/5 p-4 rounded-xl border border-white/10">
-                    <p className="font-medium mb-2 text-gray-300">Estrutura esperada da planilha:</p>
-                    <table className="w-full text-xs">
-                      <thead>
-                        <tr className="border-b border-white/10">
-                          <th className="text-left py-1 text-gray-400">Nome</th>
-                          <th className="text-left py-1 text-gray-400">Empresa</th>
-                          <th className="text-left py-1 text-gray-400">Número</th>
-                          <th className="text-left py-1 text-gray-400">Descrição</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        <tr>
-                          <td className="py-1 text-gray-300">João Silva</td>
-                          <td className="py-1 text-gray-300">Tech Corp</td>
-                          <td className="py-1 text-gray-300">11999999999</td>
-                          <td className="py-1 text-gray-300">Empresa de tecnologia</td>
-                        </tr>
-                      </tbody>
-                    </table>
                   </div>
                 </div>
               )}
@@ -724,7 +623,7 @@ export default function ClubsPage() {
                           <th className="text-left px-4 py-2 font-medium text-gray-400">Nome</th>
                           <th className="text-left px-4 py-2 font-medium text-gray-400">Empresa</th>
                           <th className="text-left px-4 py-2 font-medium text-gray-400">Telefone</th>
-                          <th className="text-left px-4 py-2 font-medium text-gray-400">Descrição</th>
+                          <th className="text-left px-4 py-2 font-medium text-gray-400">Email</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-white/5">
@@ -745,9 +644,7 @@ export default function ClubsPage() {
                             <td className={`px-4 py-2 ${!validatePhone(item.phone) ? 'text-red-400' : 'text-gray-300'}`}>
                               {item.phone || '-'}
                             </td>
-                            <td className="px-4 py-2 max-w-xs truncate text-gray-300">
-                              {item.companyDescription || '-'}
-                            </td>
+                            <td className="px-4 py-2 text-gray-300">{item.email || '-'}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -765,7 +662,7 @@ export default function ClubsPage() {
                     <Button
                       onClick={handleImport}
                       disabled={importInvitesMutation.isPending || importPreview.filter((i) => i.isValid).length === 0}
-                      className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white"
+                      className="bg-gradient-to-r from-indigo-500 to-purple-500 hover:from-indigo-600 hover:to-purple-600 text-white"
                     >
                       {importInvitesMutation.isPending
                         ? 'Importando...'

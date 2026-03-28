@@ -7,7 +7,13 @@ import { TagsModule } from '../tags/tags.module';
 import { ContactInvitesModule } from '../contact-invites/contact-invites.module';
 
 @Module({
-  imports: [forwardRef(() => WhatsappModule), SettingsModule, AIModule, TagsModule, ContactInvitesModule],
+  imports: [
+    forwardRef(() => WhatsappModule),
+    SettingsModule,
+    forwardRef(() => AIModule),
+    TagsModule,
+    forwardRef(() => ContactInvitesModule),
+  ],
   providers: [RegistrationService],
   exports: [RegistrationService],
 })
