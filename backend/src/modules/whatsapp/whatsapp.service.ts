@@ -2660,12 +2660,12 @@ export class WhatsappService {
   }
 
   /**
-   * Envia notificação de escassez quando um membro sai de um grupo
+   * Envia notificação de escassez quando um membro sai de um clube
    * Cria urgência informando quantas conexões foram perdidas
    */
   async sendScarcityNotification(
     phone: string,
-    groupName: string,
+    clubName: string,
     lostConnectionsCount: number,
   ): Promise<boolean> {
     if (!phone) {
@@ -2674,15 +2674,15 @@ export class WhatsappService {
     }
 
     const message =
-      `Você saiu do *${groupName}* e perdeu acesso a *${lostConnectionsCount}* conexões.\n\n` +
-      `Entre em contato com o administrador do grupo para renovar sua participação.`;
+      `Você saiu do clube *${clubName}* e perdeu acesso a *${lostConnectionsCount}* conexões.\n\n` +
+      `Entre em contato com o administrador do clube para renovar sua participação.`;
 
     try {
       const sent = await this.sendTextMessage(phone, message);
 
       if (sent) {
         this.logger.log(
-          `Notificação de escassez enviada para ${phone}: ${groupName} - ${lostConnectionsCount} conexões`,
+          `Notificação de escassez enviada para ${phone}: ${clubName} - ${lostConnectionsCount} conexões`,
         );
       }
 
@@ -2694,17 +2694,17 @@ export class WhatsappService {
   }
 
   /**
-   * Envia notificação de selo institucional quando um grupo adiciona um contato
+   * Envia notificação de selo institucional quando um clube adiciona um contato
    * O selo ficará visível para outros membros quando o usuário se cadastrar
    */
-  async sendSealNotification(phone: string, groupName: string): Promise<boolean> {
+  async sendSealNotification(phone: string, clubName: string): Promise<boolean> {
     if (!phone) {
       this.logger.warn('Telefone não informado para notificação de selo');
       return false;
     }
 
     const message =
-      `🏅 O grupo *${groupName}* adicionou um selo ao seu contato!\n\n` +
+      `🏅 O clube *${clubName}* adicionou um selo ao seu contato!\n\n` +
       `O selo institucional ficará visível para outros membros assim que você se cadastrar.\n\n` +
       `Responda qualquer mensagem para começar seu cadastro.`;
 
@@ -2712,7 +2712,7 @@ export class WhatsappService {
       const sent = await this.sendTextMessage(phone, message);
 
       if (sent) {
-        this.logger.log(`Notificação de selo enviada para ${phone}: ${groupName}`);
+        this.logger.log(`Notificação de selo enviada para ${phone}: ${clubName}`);
       }
 
       return sent;

@@ -18,7 +18,7 @@ enum UserRole {
 
 enum TagType {
   FREE           // Tags livres criadas por qualquer usuário
-  INSTITUTIONAL  // Tags de grupos/instituições (ex: SOMA)
+  INSTITUTIONAL  // Tags de clubes/instituições (ex: SOMA)
 }
 
 enum ConnectionStrength {
@@ -87,12 +87,13 @@ model User {
   // Relacionamentos
   contacts           Contact[]
   createdTags        Tag[]              @relation("TagCreator")
-  groupMemberships   GroupMember[]
+  clubMemberships    ClubMember[]
   refreshTokens      RefreshToken[]
   sentConnections    Connection[]       @relation("ConnectionFrom")
   receivedMessages   WhatsappMessage[]
   updatedSettings    SystemSetting[]    @relation("SettingUpdater")
   uploadedMedia      MediaUpload[]      @relation("MediaUploader")
+  contactInvites     ContactInvite[]    @relation("ContactInviter")
 
   @@map("users")
 }
@@ -175,18 +176,18 @@ model Tag {
   slug        String
   type        TagType  @default(FREE)
   color       String?  @default("#6366f1")
-  isVerified  Boolean  @default(false) // Herda do grupo - tag verificada/oficial
-  groupId     String?  // Se for tag institucional, pertence a um grupo
+  isVerified  Boolean  @default(false) // Herda do clube - tag verificada/oficial
+  clubId      String?  // Se for tag institucional, pertence a um clube
   createdById String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relacionamentos
   createdBy   User         @relation("TagCreator", fields: [createdById], references: [id])
-  group       Group?       @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  club        Club?        @relation(fields: [clubId], references: [id], onDelete: Cascade)
   contacts    ContactTag[]
 
-  @@unique([slug, groupId])
+  @@unique([slug, clubId])
   @@index([type])
   @@map("tags")
 }
@@ -209,46 +210,68 @@ model ContactTag {
 }
 
 // ============================================
-// GROUP - Grupos/Instituições (ex: SOMA)
+// CLUB - Clubes/Instituições (ex: SOMA)
 // ============================================
 
-model Group {
+model Club {
   id                String            @id @default(uuid())
   name              String            @unique
   slug              String            @unique
   description       String?
   isActive          Boolean           @default(true)
-  isVerified        Boolean           @default(false)     // Selo de grupo verificado/oficial
-  color             String?           @default("#6366f1") // Cor especial da tag do grupo
+  isVerified        Boolean           @default(false)     // Selo de clube verificado/oficial
+  color             String?           @default("#6366f1") // Cor especial da tag do clube
   membersVisibility MembersVisibility @default(HIDDEN)    // Visibilidade entre membros (v2)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
   // Relacionamentos
-  members GroupMember[]
+  members ClubMember[]
   tags    Tag[]
-  invites GroupInvite[]
+  invites ClubInvite[]
+  admins  ClubAdmin[]
 
-  @@map("groups")
+  @@map("clubs")
 }
 
 // ============================================
-// GROUP_MEMBER - Membros de grupos
+// CLUB_MEMBER - Membros de clubes
 // ============================================
 
-model GroupMember {
+model ClubMember {
   id        String   @id @default(uuid())
   userId    String
-  groupId   String
+  clubId    String
   isAdmin   Boolean  @default(false)
   joinedAt  DateTime @default(now())
   leftAt    DateTime?
 
   user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  club  Club  @relation(fields: [clubId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, groupId])
-  @@map("group_members")
+  @@unique([userId, clubId])
+  @@map("club_members")
+}
+
+// ============================================
+// CLUB_ADMIN - Credenciais específicas por admin do clube
+// ============================================
+
+model ClubAdmin {
+  id        String   @id @default(uuid())
+  clubId    String
+  email     String
+  password  String   // Hash bcrypt
+  name      String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
+
+  @@unique([clubId, email])
+  @@index([email])
+  @@map("club_admins")
 }
 
 // ============================================
@@ -369,7 +392,7 @@ model MediaUpload {
 }
 
 // ============================================
-// GROUP_INVITE - Convites pendentes para grupos
+// CLUB_INVITE - Convites pendentes para clubes
 // ============================================
 
 enum InviteStatus {
@@ -380,9 +403,16 @@ enum InviteStatus {
   REJECTED      // Usuário recusou
 }
 
-model GroupInvite {
+enum ContactInviteStatus {
+  PENDING     // Aguardando envio
+  NOTIFIED    // Notificação enviada
+  REGISTERED  // Usuário se cadastrou
+  BLOCKED     // Bloqueado (opt-out ou limite atingido)
+}
+
+model ClubInvite {
   id                 String       @id @default(uuid())
-  groupId            String
+  clubId             String
   name               String
   phone              String
   email              String?      // Email do convidado
@@ -392,8 +422,32 @@ model GroupInvite {
   invitedAt          DateTime?
   createdAt          DateTime     @default(now())
 
-  group Group @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
 
-  @@unique([groupId, phone])
-  @@map("group_invites")
+  @@unique([clubId, phone])
+  @@map("club_invites")
+}
+
+// ============================================
+// CONTACT_INVITE - Convites de contatos não cadastrados
+// ============================================
+
+model ContactInvite {
+  id           String              @id @default(uuid())
+  phone        String              @unique  // Telefone do convidado
+  inviterId    String              // Quem convidou primeiro
+  inviterName  String              // Nome de quem convidou (para a mensagem)
+  contactName  String?             // Nome do contato (se disponível)
+  status       ContactInviteStatus @default(PENDING)
+  notifiedAt   DateTime?
+  registeredAt DateTime?
+  inviteCount  Int                 @default(1)  // Quantas vezes foi convidado
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  inviter User @relation("ContactInviter", fields: [inviterId], references: [id])
+
+  @@index([phone])
+  @@index([status])
+  @@map("contact_invites")
 }

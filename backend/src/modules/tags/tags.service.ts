@@ -24,7 +24,7 @@ export class TagsService {
     const existing = await this.prisma.tag.findFirst({
       where: {
         slug,
-        groupId: dto.groupId || null,
+        clubId: dto.clubId || null,
       },
     });
 
@@ -32,19 +32,19 @@ export class TagsService {
       throw new ConflictException('Já existe uma tag com esse nome');
     }
 
-    // Se for tag institucional, verifica se o usuário pertence ao grupo
-    if (dto.type === TagType.INSTITUTIONAL && dto.groupId) {
-      const membership = await this.prisma.groupMember.findUnique({
+    // Se for tag institucional, verifica se o usuário pertence ao clube
+    if (dto.type === TagType.INSTITUTIONAL && dto.clubId) {
+      const membership = await this.prisma.clubMember.findUnique({
         where: {
-          userId_groupId: {
+          userId_clubId: {
             userId,
-            groupId: dto.groupId,
+            clubId: dto.clubId,
           },
         },
       });
 
       if (!membership || membership.leftAt) {
-        throw new ForbiddenException('Você não pertence a este grupo');
+        throw new ForbiddenException('Você não pertence a este clube');
       }
     }
 
@@ -54,23 +54,23 @@ export class TagsService {
         slug,
         type: dto.type || TagType.FREE,
         color: dto.color,
-        groupId: dto.groupId,
+        clubId: dto.clubId,
         createdById: userId,
       },
     });
   }
 
   async findAll(userId: string, type?: TagType) {
-    // Busca as tags livres do usuário e as tags institucionais dos grupos que ele pertence
-    const userGroups = await this.prisma.groupMember.findMany({
+    // Busca as tags livres do usuário e as tags institucionais dos clubes que ele pertence
+    const userClubs = await this.prisma.clubMember.findMany({
       where: {
         userId,
         leftAt: null,
       },
-      select: { groupId: true },
+      select: { clubId: true },
     });
 
-    const groupIds = userGroups.map((g) => g.groupId);
+    const clubIds = userClubs.map((c) => c.clubId);
 
     return this.prisma.tag.findMany({
       where: {
@@ -80,14 +80,14 @@ export class TagsService {
             OR: [
               // Tags livres criadas pelo usuário
               { type: TagType.FREE, createdById: userId },
-              // Tags institucionais dos grupos do usuário
-              { type: TagType.INSTITUTIONAL, groupId: { in: groupIds } },
+              // Tags institucionais dos clubes do usuário
+              { type: TagType.INSTITUTIONAL, clubId: { in: clubIds } },
             ],
           },
         ],
       },
       include: {
-        group: {
+        club: {
           select: {
             id: true,
             name: true,
@@ -105,7 +105,7 @@ export class TagsService {
     const tag = await this.prisma.tag.findUnique({
       where: { id },
       include: {
-        group: true,
+        club: true,
       },
     });
 
@@ -124,19 +124,19 @@ export class TagsService {
       throw new ForbiddenException('Sem permissão para editar esta tag');
     }
 
-    // Para tags institucionais, precisa ser admin do grupo
-    if (tag.type === TagType.INSTITUTIONAL && tag.groupId) {
-      const membership = await this.prisma.groupMember.findUnique({
+    // Para tags institucionais, precisa ser admin do clube
+    if (tag.type === TagType.INSTITUTIONAL && tag.clubId) {
+      const membership = await this.prisma.clubMember.findUnique({
         where: {
-          userId_groupId: {
+          userId_clubId: {
             userId,
-            groupId: tag.groupId,
+            clubId: tag.clubId,
           },
         },
       });
 
       if (!membership || !membership.isAdmin || membership.leftAt) {
-        throw new ForbiddenException('Apenas admins do grupo podem editar tags institucionais');
+        throw new ForbiddenException('Apenas admins do clube podem editar tags institucionais');
       }
     }
 
@@ -165,18 +165,18 @@ export class TagsService {
       throw new ForbiddenException('Sem permissão para excluir esta tag');
     }
 
-    if (tag.type === TagType.INSTITUTIONAL && tag.groupId) {
-      const membership = await this.prisma.groupMember.findUnique({
+    if (tag.type === TagType.INSTITUTIONAL && tag.clubId) {
+      const membership = await this.prisma.clubMember.findUnique({
         where: {
-          userId_groupId: {
+          userId_clubId: {
             userId,
-            groupId: tag.groupId,
+            clubId: tag.clubId,
           },
         },
       });
 
       if (!membership || !membership.isAdmin || membership.leftAt) {
-        throw new ForbiddenException('Apenas admins do grupo podem excluir tags institucionais');
+        throw new ForbiddenException('Apenas admins do clube podem excluir tags institucionais');
       }
     }
 
@@ -185,16 +185,16 @@ export class TagsService {
     });
   }
 
-  async revokeInstitutionalTags(userId: string, groupId: string) {
-    // Remove todas as associações de tags institucionais do grupo dos contatos do usuário
-    const groupTags = await this.prisma.tag.findMany({
+  async revokeInstitutionalTags(userId: string, clubId: string) {
+    // Remove todas as associações de tags institucionais do clube dos contatos do usuário
+    const clubTags = await this.prisma.tag.findMany({
       where: {
         type: TagType.INSTITUTIONAL,
-        groupId,
+        clubId,
       },
     });
 
-    const tagIds = groupTags.map((t) => t.id);
+    const tagIds = clubTags.map((t) => t.id);
 
     const userContacts = await this.prisma.contact.findMany({
       where: { ownerId: userId },

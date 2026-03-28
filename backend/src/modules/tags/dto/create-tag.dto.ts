@@ -18,8 +18,8 @@ export class CreateTagDto {
   @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'Cor deve estar no formato hex (#RRGGBB)' })
   color?: string;
 
-  @ApiProperty({ description: 'ID do grupo (apenas para tags institucionais)', required: false })
+  @ApiProperty({ description: 'ID do clube (apenas para tags institucionais)', required: false })
   @IsOptional()
   @IsUUID()
-  groupId?: string;
+  clubId?: string;
 }

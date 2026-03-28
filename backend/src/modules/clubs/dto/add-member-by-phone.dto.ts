@@ -31,6 +31,6 @@ export class AddMemberByPhoneResponseDto {
   })
   status: 'added' | 'invited';
 
-  @ApiProperty({ example: 'João Silva adicionado ao grupo' })
+  @ApiProperty({ example: 'João Silva adicionado ao clube' })
   message: string;
 }

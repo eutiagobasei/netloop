@@ -12,7 +12,7 @@ import { SettingsModule } from './modules/settings/settings.module';
 import { AIModule } from './modules/ai/ai.module';
 import { UploadsModule } from './modules/uploads/uploads.module';
 import { RegistrationModule } from './modules/registration/registration.module';
-import { GroupsModule } from './modules/groups/groups.module';
+import { ClubsModule } from './modules/clubs/clubs.module';
 
 @Module({
   imports: [
@@ -37,7 +37,7 @@ import { GroupsModule } from './modules/groups/groups.module';
     AIModule,
     UploadsModule,
     RegistrationModule,
-    GroupsModule,
+    ClubsModule,
   ],
 })
 export class AppModule {}

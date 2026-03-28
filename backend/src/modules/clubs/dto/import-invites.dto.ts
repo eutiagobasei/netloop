@@ -58,7 +58,7 @@ export class ImportInvitesResponseDto {
   @ApiProperty({ example: 2, description: 'Convites duplicados (já existiam)' })
   duplicates: number;
 
-  @ApiProperty({ example: 1, description: 'Pessoas que já são membros do grupo' })
+  @ApiProperty({ example: 1, description: 'Pessoas que já são membros do clube' })
   alreadyMembers: number;
 
   @ApiProperty({ example: [], description: 'Erros de validação' })

@@ -3,6 +3,32 @@ import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
 
+// Settings padrão para convites de contatos
+const CONTACT_INVITE_SETTINGS = {
+  contact_invite_enabled: {
+    key: 'contact_invite_enabled',
+    value: 'true',
+    category: 'SYSTEM' as const,
+    description: 'Habilitar notificações de convite para contatos',
+  },
+  contact_invite_message: {
+    key: 'contact_invite_message',
+    value: `🤝 *{inviterName}* acabou de adicionar você à rede de networking dele no Netloop!
+
+O Netloop é uma plataforma que ajuda profissionais a gerenciar suas conexões de forma inteligente.
+
+Por enquanto o acesso é *gratuito*! Responda qualquer mensagem para começar seu cadastro.`,
+    category: 'PROMPTS' as const,
+    description: 'Template da mensagem de convite. Variáveis: {inviterName}, {contactName}, {inviteCount}',
+  },
+  contact_invite_delay_ms: {
+    key: 'contact_invite_delay_ms',
+    value: '5000',
+    category: 'SYSTEM' as const,
+    description: 'Delay em ms antes de enviar notificação (evita spam)',
+  },
+};
+
 // Prompts padrão para IA
 const DEFAULT_PROMPTS = {
   prompt_intent_classification: {
@@ -182,7 +208,7 @@ async function main() {
   console.log('✅ Usuário de teste criado:', user.email);
 
   // Cria grupo SOMA
-  const group = await prisma.group.upsert({
+  const group = await prisma.club.upsert({
     where: { slug: 'soma' },
     update: {},
     create: {
@@ -194,17 +220,17 @@ async function main() {
   console.log('✅ Grupo criado:', group.name);
 
   // Adiciona usuário ao grupo
-  await prisma.groupMember.upsert({
+  await prisma.clubMember.upsert({
     where: {
-      userId_groupId: {
+      userId_clubId: {
         userId: user.id,
-        groupId: group.id,
+        clubId: group.id,
       },
     },
     update: {},
     create: {
       userId: user.id,
-      groupId: group.id,
+      clubId: group.id,
       isAdmin: false,
     },
   });
@@ -224,7 +250,7 @@ async function main() {
     const existingTag = await prisma.tag.findFirst({
       where: {
         slug,
-        groupId: null,
+        clubId: null,
       },
     });
 
@@ -246,7 +272,7 @@ async function main() {
   const existingInstitutionalTag = await prisma.tag.findFirst({
     where: {
       slug: 'membro-soma',
-      groupId: group.id,
+      clubId: group.id,
     },
   });
 
@@ -257,7 +283,7 @@ async function main() {
         slug: 'membro-soma',
         color: '#ef4444',
         type: TagType.INSTITUTIONAL,
-        groupId: group.id,
+        clubId: group.id,
         createdById: admin.id,
       },
     });
@@ -342,6 +368,24 @@ async function main() {
     });
   }
   console.log('✅ Prompts de IA criados:', Object.keys(DEFAULT_PROMPTS).length);
+
+  // Cria settings de convite de contatos
+  console.log('\n📨 Criando settings de convite de contatos...');
+  for (const setting of Object.values(CONTACT_INVITE_SETTINGS)) {
+    await prisma.systemSetting.upsert({
+      where: { key: setting.key },
+      update: {}, // Não atualiza se já existir (permite customização)
+      create: {
+        key: setting.key,
+        value: setting.value,
+        category: setting.category === 'SYSTEM' ? SettingCategory.SYSTEM : SettingCategory.PROMPTS,
+        isEncrypted: false,
+        description: setting.description,
+        updatedById: admin.id,
+      },
+    });
+  }
+  console.log('✅ Settings de convite criados:', Object.keys(CONTACT_INVITE_SETTINGS).length);
 
   console.log('\n🎉 Seed concluído com sucesso!');
   console.log('\n📋 Credenciais:');

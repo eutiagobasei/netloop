@@ -6,7 +6,7 @@ export class AddMemberDto {
   @IsUUID()
   userId: string;
 
-  @ApiProperty({ example: false, required: false, description: 'Se o membro é admin do grupo' })
+  @ApiProperty({ example: false, required: false, description: 'Se o membro é admin do clube' })
   @IsOptional()
   @IsBoolean()
   isAdmin?: boolean;

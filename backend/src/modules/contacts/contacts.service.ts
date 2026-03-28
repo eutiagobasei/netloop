@@ -15,6 +15,7 @@ import { AIService } from '../ai/ai.service';
 import { ExtractionResult } from '../ai/dto/extracted-contact.dto';
 import { PhoneUtil } from '../../common/utils/phone.util';
 import { SearchCacheService } from './search-cache.service';
+import { ContactInvitesService } from '../contact-invites/contact-invites.service';
 
 // Tipos para resposta de busca
 export interface SearchResult {
@@ -61,6 +62,7 @@ export class ContactsService {
     @Inject(forwardRef(() => AIService))
     private readonly aiService: AIService,
     private readonly searchCache: SearchCacheService,
+    private readonly contactInvitesService: ContactInvitesService,
   ) {}
 
   // ============================================
@@ -218,6 +220,18 @@ export class ContactsService {
 
     // Invalidate search cache for this user (new contact may affect search results)
     this.searchCache.invalidateForUser(ownerId);
+
+    // Notifica contato se tiver telefone (async, não bloqueia)
+    if (normalizedPhone) {
+      const owner = await this.prisma.user.findUnique({
+        where: { id: ownerId },
+        select: { name: true },
+      });
+
+      this.contactInvitesService
+        .processContactCreated(ownerId, owner?.name || 'Alguém', normalizedPhone, dto.name)
+        .catch((err) => this.logger.error(`Erro ao processar convite: ${err.message}`));
+    }
 
     return this.formatContactResponse(contact);
   }

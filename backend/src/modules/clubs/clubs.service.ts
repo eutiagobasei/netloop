@@ -8,8 +8,8 @@ import {
 import { PrismaService } from '@/prisma/prisma.service';
 import { TagType } from '@prisma/client';
 import {
-  CreateGroupDto,
-  UpdateGroupDto,
+  CreateClubDto,
+  UpdateClubDto,
   AddMemberDto,
   AddMemberByPhoneDto,
   AddMemberByPhoneResponseDto,
@@ -21,8 +21,8 @@ import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { SlugUtil } from '@/common/utils/slug.util';
 
 @Injectable()
-export class GroupsService {
-  private readonly logger = new Logger(GroupsService.name);
+export class ClubsService {
+  private readonly logger = new Logger(ClubsService.name);
 
   constructor(
     private readonly prisma: PrismaService,
@@ -31,22 +31,22 @@ export class GroupsService {
   ) {}
 
   /**
-   * Cria um novo grupo com sua tag institucional
+   * Cria um novo clube com sua tag institucional
    */
-  async create(adminUserId: string, dto: CreateGroupDto) {
+  async create(adminUserId: string, dto: CreateClubDto) {
     const slug = SlugUtil.generate(dto.name);
 
-    const existing = await this.prisma.group.findFirst({
+    const existing = await this.prisma.club.findFirst({
       where: { OR: [{ name: dto.name }, { slug }] },
     });
 
     if (existing) {
-      throw new ConflictException('Já existe um grupo com esse nome');
+      throw new ConflictException('Já existe um clube com esse nome');
     }
 
-    // Cria o grupo e adiciona o criador como admin
-    const group = await this.prisma.$transaction(async (tx) => {
-      const newGroup = await tx.group.create({
+    // Cria o clube e adiciona o criador como admin
+    const club = await this.prisma.$transaction(async (tx) => {
+      const newClub = await tx.club.create({
         data: {
           name: dto.name,
           slug,
@@ -56,16 +56,16 @@ export class GroupsService {
         },
       });
 
-      // Adiciona o criador como admin
-      await tx.groupMember.create({
+      // Adiciona o criador como admin (membro do clube)
+      await tx.clubMember.create({
         data: {
           userId: adminUserId,
-          groupId: newGroup.id,
+          clubId: newClub.id,
           isAdmin: true,
         },
       });
 
-      // Cria a tag institucional do grupo
+      // Cria a tag institucional do clube
       await tx.tag.create({
         data: {
           name: dto.name,
@@ -73,24 +73,24 @@ export class GroupsService {
           type: TagType.INSTITUTIONAL,
           color: dto.color || '#6366f1',
           isVerified: dto.isVerified ?? false,
-          groupId: newGroup.id,
+          clubId: newClub.id,
           createdById: adminUserId,
         },
       });
 
-      return newGroup;
+      return newClub;
     });
 
-    this.logger.log(`Grupo criado: ${group.name} (ID: ${group.id}) por usuário ${adminUserId}`);
+    this.logger.log(`Clube criado: ${club.name} (ID: ${club.id}) por usuário ${adminUserId}`);
 
-    return this.findById(group.id);
+    return this.findById(club.id);
   }
 
   /**
-   * Lista todos os grupos ativos
+   * Lista todos os clubes ativos
    */
   async findAll(includeInactive = false) {
-    return this.prisma.group.findMany({
+    return this.prisma.club.findMany({
       where: includeInactive ? {} : { isActive: true },
       include: {
         _count: {
@@ -106,11 +106,11 @@ export class GroupsService {
   }
 
   /**
-   * Busca um grupo pelo ID
-   * Requer que o usuário seja membro do grupo para ver detalhes completos
+   * Busca um clube pelo ID
+   * Requer que o usuário seja membro do clube para ver detalhes completos
    */
   async findById(id: string, userId?: string) {
-    const group = await this.prisma.group.findUnique({
+    const club = await this.prisma.club.findUnique({
       where: { id },
       include: {
         members: {
@@ -132,50 +132,50 @@ export class GroupsService {
       },
     });
 
-    if (!group) {
-      throw new NotFoundException('Grupo não encontrado');
+    if (!club) {
+      throw new NotFoundException('Clube não encontrado');
     }
 
-    // Se userId foi fornecido, verifica se é membro do grupo
+    // Se userId foi fornecido, verifica se é membro do clube
     if (userId) {
-      const isMember = group.members.some((m) => m.user.id === userId);
+      const isMember = club.members.some((m) => m.user.id === userId);
       if (!isMember) {
         // Retorna versão limitada sem dados sensíveis
         return {
-          id: group.id,
-          name: group.name,
-          slug: group.slug,
-          description: group.description,
-          isVerified: group.isVerified,
-          color: group.color,
-          isActive: group.isActive,
-          tags: group.tags,
-          _count: group._count,
+          id: club.id,
+          name: club.name,
+          slug: club.slug,
+          description: club.description,
+          isVerified: club.isVerified,
+          color: club.color,
+          isActive: club.isActive,
+          tags: club.tags,
+          _count: club._count,
           members: [], // Não expõe membros para não-membros
         };
       }
     }
 
-    return group;
+    return club;
   }
 
   /**
-   * Atualiza um grupo
+   * Atualiza um clube
    */
-  async update(id: string, userId: string, dto: UpdateGroupDto) {
+  async update(id: string, userId: string, dto: UpdateClubDto) {
     await this.ensureAdmin(id, userId);
 
-    const group = await this.findById(id);
+    const club = await this.findById(id);
 
-    const data: Partial<UpdateGroupDto> & { slug?: string } = { ...dto };
+    const data: Partial<UpdateClubDto> & { slug?: string } = { ...dto };
 
     // Se mudar o nome, atualiza também o slug e a tag
-    if (dto.name && dto.name !== group.name) {
+    if (dto.name && dto.name !== club.name) {
       data.slug = SlugUtil.generate(dto.name);
 
       // Atualiza a tag institucional
       await this.prisma.tag.updateMany({
-        where: { groupId: id, type: TagType.INSTITUTIONAL },
+        where: { clubId: id, type: TagType.INSTITUTIONAL },
         data: {
           name: dto.name,
           slug: data.slug,
@@ -186,7 +186,7 @@ export class GroupsService {
     } else if (dto.color || dto.isVerified !== undefined) {
       // Atualiza apenas cor/verificado da tag
       await this.prisma.tag.updateMany({
-        where: { groupId: id, type: TagType.INSTITUTIONAL },
+        where: { clubId: id, type: TagType.INSTITUTIONAL },
         data: {
           ...(dto.color && { color: dto.color }),
           ...(dto.isVerified !== undefined && { isVerified: dto.isVerified }),
@@ -194,7 +194,7 @@ export class GroupsService {
       });
     }
 
-    await this.prisma.group.update({
+    await this.prisma.club.update({
       where: { id },
       data,
     });
@@ -203,12 +203,12 @@ export class GroupsService {
   }
 
   /**
-   * Adiciona um membro ao grupo e aplica a tag institucional em todos os contatos dele
+   * Adiciona um membro ao clube e aplica a tag institucional em todos os contatos dele
    */
-  async addMember(groupId: string, adminUserId: string, dto: AddMemberDto) {
-    await this.ensureAdmin(groupId, adminUserId);
+  async addMember(clubId: string, adminUserId: string, dto: AddMemberDto) {
+    await this.ensureAdmin(clubId, adminUserId);
 
-    const group = await this.findById(groupId);
+    const club = await this.findById(clubId);
 
     // Verifica se o usuário existe
     const user = await this.prisma.user.findUnique({
@@ -221,17 +221,17 @@ export class GroupsService {
     }
 
     // Verifica se já é membro
-    const existingMembership = await this.prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId: dto.userId, groupId } },
+    const existingMembership = await this.prisma.clubMember.findUnique({
+      where: { userId_clubId: { userId: dto.userId, clubId } },
     });
 
     if (existingMembership && !existingMembership.leftAt) {
-      throw new ConflictException('Usuário já é membro deste grupo');
+      throw new ConflictException('Usuário já é membro deste clube');
     }
 
     // Se tinha saído antes, reativa a membership
     if (existingMembership) {
-      await this.prisma.groupMember.update({
+      await this.prisma.clubMember.update({
         where: { id: existingMembership.id },
         data: {
           leftAt: null,
@@ -240,55 +240,55 @@ export class GroupsService {
         },
       });
     } else {
-      await this.prisma.groupMember.create({
+      await this.prisma.clubMember.create({
         data: {
           userId: dto.userId,
-          groupId,
+          clubId,
           isAdmin: dto.isAdmin ?? false,
         },
       });
     }
 
-    // Busca a tag institucional do grupo
-    const groupTag = await this.prisma.tag.findFirst({
-      where: { groupId, type: TagType.INSTITUTIONAL },
+    // Busca a tag institucional do clube
+    const clubTag = await this.prisma.tag.findFirst({
+      where: { clubId, type: TagType.INSTITUTIONAL },
     });
 
-    if (groupTag) {
+    if (clubTag) {
       // Aplica a tag em todos os contatos do novo membro
-      await this.tagsService.applyTagToAllUserContacts(dto.userId, groupTag.id);
+      await this.tagsService.applyTagToAllUserContacts(dto.userId, clubTag.id);
     }
 
-    this.logger.log(`Membro ${user.name} adicionado ao grupo ${group.name}`);
+    this.logger.log(`Membro ${user.name} adicionado ao clube ${club.name}`);
 
-    return { message: `${user.name} adicionado ao grupo ${group.name}` };
+    return { message: `${user.name} adicionado ao clube ${club.name}` };
   }
 
   /**
-   * Adiciona um membro ao grupo por telefone
+   * Adiciona um membro ao clube por telefone
    * Se o usuário já existe, adiciona direto. Se não, cria convite e envia notificação.
    */
   async addMemberByPhone(
-    groupId: string,
+    clubId: string,
     adminUserId: string,
     dto: AddMemberByPhoneDto,
   ): Promise<AddMemberByPhoneResponseDto> {
-    await this.ensureAdmin(groupId, adminUserId);
+    await this.ensureAdmin(clubId, adminUserId);
 
-    const group = await this.findById(groupId);
+    const club = await this.findById(clubId);
     const normalizedPhone = this.normalizePhone(dto.phone);
 
     // Verifica se já é membro
-    const existingMember = await this.prisma.groupMember.findFirst({
+    const existingMember = await this.prisma.clubMember.findFirst({
       where: {
-        groupId,
+        clubId,
         user: { phone: normalizedPhone },
         leftAt: null,
       },
     });
 
     if (existingMember) {
-      throw new ConflictException('Já é membro deste grupo');
+      throw new ConflictException('Já é membro deste clube');
     }
 
     // Verifica se usuário existe
@@ -298,15 +298,15 @@ export class GroupsService {
 
     if (user) {
       // Usuário existe → adiciona direto
-      await this.addMember(groupId, adminUserId, { userId: user.id });
-      return { status: 'added', message: `${user.name} adicionado ao grupo` };
+      await this.addMember(clubId, adminUserId, { userId: user.id });
+      return { status: 'added', message: `${user.name} adicionado ao clube` };
     }
 
     // Usuário não existe → cria convite e notifica
-    await this.prisma.groupInvite.upsert({
-      where: { groupId_phone: { groupId, phone: normalizedPhone } },
+    await this.prisma.clubInvite.upsert({
+      where: { clubId_phone: { clubId, phone: normalizedPhone } },
       create: {
-        groupId,
+        clubId,
         name: dto.name.trim(),
         phone: normalizedPhone,
         company: dto.company?.trim() || null,
@@ -322,17 +322,17 @@ export class GroupsService {
     });
 
     // Envia notificação via WhatsApp
-    const sent = await this.whatsappService.sendSealNotification(normalizedPhone, group.name);
+    const sent = await this.whatsappService.sendSealNotification(normalizedPhone, club.name);
 
     if (sent) {
-      await this.prisma.groupInvite.update({
-        where: { groupId_phone: { groupId, phone: normalizedPhone } },
+      await this.prisma.clubInvite.update({
+        where: { clubId_phone: { clubId, phone: normalizedPhone } },
         data: { status: 'NOTIFIED', invitedAt: new Date() },
       });
     }
 
     this.logger.log(
-      `Convite criado para ${dto.name} (${normalizedPhone}) no grupo ${group.name}. ` +
+      `Convite criado para ${dto.name} (${normalizedPhone}) no clube ${club.name}. ` +
         `Notificação ${sent ? 'enviada' : 'não enviada'}.`,
     );
 
@@ -340,29 +340,29 @@ export class GroupsService {
   }
 
   /**
-   * Remove um membro do grupo, remove a tag dos contatos e envia notificação de escassez
+   * Remove um membro do clube, remove a tag dos contatos e envia notificação de escassez
    */
-  async removeMember(groupId: string, adminUserId: string, userId: string) {
-    await this.ensureAdmin(groupId, adminUserId);
+  async removeMember(clubId: string, adminUserId: string, userId: string) {
+    await this.ensureAdmin(clubId, adminUserId);
 
-    const group = await this.findById(groupId);
+    const club = await this.findById(clubId);
 
-    const membership = await this.prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId, groupId } },
+    const membership = await this.prisma.clubMember.findUnique({
+      where: { userId_clubId: { userId, clubId } },
     });
 
     if (!membership || membership.leftAt) {
-      throw new NotFoundException('Membro não encontrado neste grupo');
+      throw new NotFoundException('Membro não encontrado neste clube');
     }
 
     // Não pode remover a si mesmo se for o único admin
     if (userId === adminUserId) {
-      const adminCount = await this.prisma.groupMember.count({
-        where: { groupId, isAdmin: true, leftAt: null },
+      const adminCount = await this.prisma.clubMember.count({
+        where: { clubId, isAdmin: true, leftAt: null },
       });
 
       if (adminCount <= 1) {
-        throw new ForbiddenException('Não é possível sair do grupo. Você é o único administrador.');
+        throw new ForbiddenException('Não é possível sair do clube. Você é o único administrador.');
       }
     }
 
@@ -371,20 +371,20 @@ export class GroupsService {
       select: { id: true, name: true, phone: true },
     });
 
-    // Busca a tag institucional do grupo
-    const groupTag = await this.prisma.tag.findFirst({
-      where: { groupId, type: TagType.INSTITUTIONAL },
+    // Busca a tag institucional do clube
+    const clubTag = await this.prisma.tag.findFirst({
+      where: { clubId, type: TagType.INSTITUTIONAL },
     });
 
     let lostConnectionsCount = 0;
 
     // Executa remoção em uma transação para garantir consistência
     await this.prisma.$transaction(async (tx) => {
-      if (groupTag) {
+      if (clubTag) {
         // Conta quantos contatos do usuário têm essa tag
         lostConnectionsCount = await tx.contactTag.count({
           where: {
-            tagId: groupTag.id,
+            tagId: clubTag.id,
             contact: { ownerId: userId },
           },
         });
@@ -392,50 +392,50 @@ export class GroupsService {
         // Remove a tag de todos os contatos do membro
         await tx.contactTag.deleteMany({
           where: {
-            tagId: groupTag.id,
+            tagId: clubTag.id,
             contact: { ownerId: userId },
           },
         });
       }
 
       // Marca o membro como saído
-      await tx.groupMember.update({
+      await tx.clubMember.update({
         where: { id: membership.id },
         data: { leftAt: new Date() },
       });
     });
 
     this.logger.log(
-      `Membro ${user?.name} removido do grupo ${group.name}. Perdeu ${lostConnectionsCount} conexões.`,
+      `Membro ${user?.name} removido do clube ${club.name}. Perdeu ${lostConnectionsCount} conexões.`,
     );
 
     // Envia notificação de escassez via WhatsApp (fora da transação)
     if (user?.phone && lostConnectionsCount > 0) {
       // Executa de forma assíncrona para não bloquear a resposta
       this.whatsappService
-        .sendScarcityNotification(user.phone, group.name, lostConnectionsCount)
+        .sendScarcityNotification(user.phone, club.name, lostConnectionsCount)
         .catch((err) => {
           this.logger.error(`Erro ao enviar notificação de escassez: ${err.message}`);
         });
     }
 
     return {
-      message: `${user?.name || 'Membro'} removido do grupo ${group.name}`,
+      message: `${user?.name || 'Membro'} removido do clube ${club.name}`,
       lostConnectionsCount,
       userPhone: user?.phone,
-      groupName: group.name,
+      clubName: club.name,
     };
   }
 
   /**
-   * Lista os membros de um grupo
-   * Requer que o usuário seja membro do grupo
+   * Lista os membros de um clube
+   * Requer que o usuário seja membro do clube
    */
-  async getMembers(groupId: string, userId: string) {
-    await this.ensureMember(groupId, userId);
+  async getMembers(clubId: string, userId: string) {
+    await this.ensureMember(clubId, userId);
 
-    return this.prisma.groupMember.findMany({
-      where: { groupId, leftAt: null },
+    return this.prisma.clubMember.findMany({
+      where: { clubId, leftAt: null },
       include: {
         user: {
           select: { id: true, name: true, email: true, phone: true },
@@ -446,14 +446,14 @@ export class GroupsService {
   }
 
   /**
-   * Agrega os contatos de todos os membros do grupo
+   * Agrega os contatos de todos os membros do clube
    * (Para a empresa visualizar a rede de contatos dos membros)
    */
-  async getGroupContacts(groupId: string, adminUserId: string) {
-    await this.ensureAdmin(groupId, adminUserId);
+  async getClubContacts(clubId: string, adminUserId: string) {
+    await this.ensureAdmin(clubId, adminUserId);
 
-    const members = await this.prisma.groupMember.findMany({
-      where: { groupId, leftAt: null },
+    const members = await this.prisma.clubMember.findMany({
+      where: { clubId, leftAt: null },
       select: { userId: true },
     });
 
@@ -509,28 +509,28 @@ export class GroupsService {
   }
 
   /**
-   * Verifica se o usuário é membro do grupo
+   * Verifica se o usuário é membro do clube
    */
-  private async ensureMember(groupId: string, userId: string) {
-    const membership = await this.prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId, groupId } },
+  private async ensureMember(clubId: string, userId: string) {
+    const membership = await this.prisma.clubMember.findUnique({
+      where: { userId_clubId: { userId, clubId } },
     });
 
     if (!membership || membership.leftAt) {
-      throw new ForbiddenException('Você não é membro deste grupo');
+      throw new ForbiddenException('Você não é membro deste clube');
     }
   }
 
   /**
-   * Verifica se o usuário é admin do grupo
+   * Verifica se o usuário é admin do clube
    */
-  private async ensureAdmin(groupId: string, userId: string) {
-    const membership = await this.prisma.groupMember.findUnique({
-      where: { userId_groupId: { userId, groupId } },
+  async ensureAdmin(clubId: string, userId: string) {
+    const membership = await this.prisma.clubMember.findUnique({
+      where: { userId_clubId: { userId, clubId } },
     });
 
     if (!membership || !membership.isAdmin || membership.leftAt) {
-      throw new ForbiddenException('Apenas administradores do grupo podem realizar esta ação');
+      throw new ForbiddenException('Apenas administradores do clube podem realizar esta ação');
     }
   }
 
@@ -540,13 +540,13 @@ export class GroupsService {
    * Se não, cria convite e envia notificação via WhatsApp.
    */
   async importInvites(
-    groupId: string,
+    clubId: string,
     adminUserId: string,
     dto: ImportInvitesDto,
   ): Promise<ImportInvitesResponseDto> {
-    await this.ensureAdmin(groupId, adminUserId);
+    await this.ensureAdmin(clubId, adminUserId);
 
-    const group = await this.findById(groupId);
+    const club = await this.findById(clubId);
 
     const result: ImportInvitesResponseDto = {
       created: 0,
@@ -556,9 +556,9 @@ export class GroupsService {
       errors: [],
     };
 
-    // Busca membros atuais do grupo para verificar quem já é membro
-    const existingMembers = await this.prisma.groupMember.findMany({
-      where: { groupId, leftAt: null },
+    // Busca membros atuais do clube para verificar quem já é membro
+    const existingMembers = await this.prisma.clubMember.findMany({
+      where: { clubId, leftAt: null },
       include: {
         user: { select: { phone: true } },
       },
@@ -568,9 +568,9 @@ export class GroupsService {
       existingMembers.filter((m) => m.user.phone).map((m) => this.normalizePhone(m.user.phone!)),
     );
 
-    // Busca convites existentes para este grupo
-    const existingInvites = await this.prisma.groupInvite.findMany({
-      where: { groupId },
+    // Busca convites existentes para este clube
+    const existingInvites = await this.prisma.clubInvite.findMany({
+      where: { clubId },
       select: { phone: true },
     });
 
@@ -611,17 +611,17 @@ export class GroupsService {
 
         if (existingUser) {
           // Usuário existe → adiciona direto como membro
-          await this.addMember(groupId, adminUserId, { userId: existingUser.id });
+          await this.addMember(clubId, adminUserId, { userId: existingUser.id });
           memberPhones.add(normalizedPhone); // Evita duplicatas
           result.addedDirectly++;
           this.logger.log(
-            `Usuário existente ${existingUser.name} adicionado direto ao grupo ${group.name}`,
+            `Usuário existente ${existingUser.name} adicionado direto ao clube ${club.name}`,
           );
         } else {
           // Usuário não existe → cria convite e notifica
-          await this.prisma.groupInvite.create({
+          await this.prisma.clubInvite.create({
             data: {
-              groupId,
+              clubId,
               name: invite.name.trim(),
               phone: normalizedPhone,
               company: invite.company?.trim() || null,
@@ -632,11 +632,11 @@ export class GroupsService {
 
           // Envia notificação via WhatsApp (async, não bloqueia)
           this.whatsappService
-            .sendSealNotification(normalizedPhone, group.name)
+            .sendSealNotification(normalizedPhone, club.name)
             .then(async (sent) => {
               if (sent) {
-                await this.prisma.groupInvite.update({
-                  where: { groupId_phone: { groupId, phone: normalizedPhone } },
+                await this.prisma.clubInvite.update({
+                  where: { clubId_phone: { clubId, phone: normalizedPhone } },
                   data: { status: 'NOTIFIED', invitedAt: new Date() },
                 });
               }
@@ -660,7 +660,7 @@ export class GroupsService {
     }
 
     this.logger.log(
-      `Importação de convites para grupo ${group.name}: ${result.created} convites criados, ` +
+      `Importação de convites para clube ${club.name}: ${result.created} convites criados, ` +
         `${result.addedDirectly} adicionados direto, ${result.duplicates} duplicados, ` +
         `${result.alreadyMembers} já membros`,
     );

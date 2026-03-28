@@ -10,7 +10,7 @@ import {
 } from 'class-validator';
 import { MembersVisibility } from '@prisma/client';
 
-export class UpdateGroupDto {
+export class UpdateClubDto {
   @ApiProperty({ example: 'SOMA', required: false })
   @IsOptional()
   @IsString()

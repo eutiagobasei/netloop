@@ -1,7 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsString, IsOptional, IsBoolean, Matches, MaxLength, MinLength } from 'class-validator';
 
-export class CreateGroupDto {
+export class CreateClubDto {
   @ApiProperty({ example: 'SOMA' })
   @IsString()
   @MinLength(2)
@@ -20,7 +20,7 @@ export class CreateGroupDto {
   @Matches(/^#[0-9A-Fa-f]{6}$/, { message: 'Cor deve estar no formato hex (#RRGGBB)' })
   color?: string;
 
-  @ApiProperty({ example: true, required: false, description: 'Grupo verificado/oficial' })
+  @ApiProperty({ example: true, required: false, description: 'Clube verificado/oficial' })
   @IsOptional()
   @IsBoolean()
   isVerified?: boolean;

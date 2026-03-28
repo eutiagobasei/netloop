@@ -3,6 +3,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { ExtractionService } from '../ai/services/extraction.service';
 import { TagsService } from '../tags/tags.service';
+import { ContactInvitesService } from '../contact-invites/contact-invites.service';
 import { PhoneUtil } from '../../common/utils/phone.util';
 import { TagType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
@@ -37,6 +38,7 @@ export class RegistrationService {
     private readonly evolutionService: EvolutionService,
     private readonly extractionService: ExtractionService,
     private readonly tagsService: TagsService,
+    private readonly contactInvitesService: ContactInvitesService,
   ) {}
 
   /**
@@ -256,8 +258,11 @@ Caso contrário, me passa outro email?`;
       },
     });
 
-    // Processa convites de grupo pendentes para este telefone
-    await this.processPendingGroupInvites(user.id, formattedPhone);
+    // Marca convites de contato como registrados
+    await this.contactInvitesService.markAsRegistered(formattedPhone);
+
+    // Processa convites de clube pendentes para este telefone
+    await this.processPendingClubInvites(user.id, formattedPhone);
 
     // Marca fluxo como completo
     await this.prisma.userRegistrationFlow.update({
@@ -308,17 +313,17 @@ Agora é só me mandar áudios ou textos sobre pessoas que conheceu! 🚀`;
   }
 
   /**
-   * Processa convites de grupo pendentes para um usuário recém-cadastrado
+   * Processa convites de clube pendentes para um usuário recém-cadastrado
    * Converte invites em memberships e aplica tags institucionais
    */
-  private async processPendingGroupInvites(userId: string, phone: string): Promise<void> {
-    const invites = await this.prisma.groupInvite.findMany({
+  private async processPendingClubInvites(userId: string, phone: string): Promise<void> {
+    const invites = await this.prisma.clubInvite.findMany({
       where: {
         phone,
         status: { in: ['PENDING', 'NOTIFIED'] },
       },
       include: {
-        group: {
+        club: {
           include: {
             tags: {
               where: { type: TagType.INSTITUTIONAL },
@@ -334,41 +339,41 @@ Agora é só me mandar áudios ou textos sobre pessoas que conheceu! 🚀`;
     }
 
     this.logger.log(
-      `Processando ${invites.length} convites de grupo para usuário ${userId} (${phone})`,
+      `Processando ${invites.length} convites de clube para usuário ${userId} (${phone})`,
     );
 
     for (const invite of invites) {
       try {
         // Cria membership
-        await this.prisma.groupMember.create({
+        await this.prisma.clubMember.create({
           data: {
             userId,
-            groupId: invite.groupId,
+            clubId: invite.clubId,
             isAdmin: false,
           },
         });
 
         // Aplica tag institucional nos contatos do usuário
-        const institutionalTag = invite.group.tags[0];
+        const institutionalTag = invite.club.tags[0];
         if (institutionalTag) {
           await this.tagsService.applyTagToAllUserContacts(userId, institutionalTag.id);
         }
 
         // Atualiza status do convite para ACCEPTED
-        await this.prisma.groupInvite.update({
+        await this.prisma.clubInvite.update({
           where: { id: invite.id },
           data: { status: 'ACCEPTED' },
         });
 
         this.logger.log(
-          `Convite convertido em membership: usuário ${userId} → grupo ${invite.group.name}`,
+          `Convite convertido em membership: usuário ${userId} → clube ${invite.club.name}`,
         );
       } catch (error) {
         // Pode haver race condition se o usuário já foi adicionado por outro caminho
         if ((error as any).code === 'P2002') {
-          this.logger.warn(`Usuário ${userId} já é membro do grupo ${invite.groupId}`);
+          this.logger.warn(`Usuário ${userId} já é membro do clube ${invite.clubId}`);
           // Ainda assim, marca o convite como aceito
-          await this.prisma.groupInvite.update({
+          await this.prisma.clubInvite.update({
             where: { id: invite.id },
             data: { status: 'ACCEPTED' },
           });

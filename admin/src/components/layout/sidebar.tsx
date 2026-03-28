@@ -27,7 +27,7 @@ type Environment = 'admin' | 'user'
 const adminNavigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { name: 'Usuários', href: '/users', icon: Users },
-  { name: 'Grupos', href: '/groups', icon: Building2 },
+  { name: 'Clubes', href: '/clubs', icon: Building2 },
   { name: 'API Keys', href: '/settings/api-keys', icon: Key },
   { name: 'WhatsApp', href: '/settings/whatsapp', icon: Smartphone },
   { name: 'Evolution API', href: '/settings/evolution', icon: MessageSquare },

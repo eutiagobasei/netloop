@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { api } from '@/lib/api'
 import * as XLSX from 'xlsx'
 
-interface Group {
+interface Club {
   id: string
   name: string
   slug: string
@@ -22,7 +22,7 @@ interface Group {
   }
 }
 
-type GroupsResponse = Group[]
+type ClubsResponse = Club[]
 
 interface UserData {
   id: string
@@ -34,7 +34,7 @@ interface UsersResponse {
   data: UserData[]
 }
 
-interface CreateGroupDto {
+interface CreateClubDto {
   name: string
   description?: string
 }
@@ -60,33 +60,33 @@ interface ImportResult {
   errors: string[]
 }
 
-export default function GroupsPage() {
+export default function ClubsPage() {
   const queryClient = useQueryClient()
   const [search, setSearch] = useState('')
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false)
   const [isAddMemberModalOpen, setIsAddMemberModalOpen] = useState(false)
-  const [selectedGroupId, setSelectedGroupId] = useState<string | null>(null)
-  const [newGroupName, setNewGroupName] = useState('')
-  const [newGroupDescription, setNewGroupDescription] = useState('')
+  const [selectedClubId, setSelectedClubId] = useState<string | null>(null)
+  const [newClubName, setNewClubName] = useState('')
+  const [newClubDescription, setNewClubDescription] = useState('')
   const [selectedUserId, setSelectedUserId] = useState('')
   const [memberRole, setMemberRole] = useState<'ADMIN' | 'MEMBER'>('MEMBER')
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
-  const [importGroupId, setImportGroupId] = useState<string | null>(null)
+  const [importClubId, setImportClubId] = useState<string | null>(null)
   const [importPreview, setImportPreview] = useState<InviteItem[]>([])
   const [importResult, setImportResult] = useState<ImportResult | null>(null)
   const [isDragging, setIsDragging] = useState(false)
   const fileInputRef = useRef<HTMLInputElement>(null)
 
-  const { data: groups = [], isLoading } = useQuery<GroupsResponse>({
-    queryKey: ['groups'],
+  const { data: clubs = [], isLoading } = useQuery<ClubsResponse>({
+    queryKey: ['clubs'],
     queryFn: async () => {
-      const response = await api.get('/groups')
+      const response = await api.get('/clubs')
       return response.data
     },
   })
 
   const { data: usersData } = useQuery<UsersResponse>({
-    queryKey: ['users-for-groups'],
+    queryKey: ['users-for-clubs'],
     queryFn: async () => {
       const response = await api.get('/users', { params: { limit: 100 } })
       return response.data
@@ -94,16 +94,16 @@ export default function GroupsPage() {
     enabled: isAddMemberModalOpen,
   })
 
-  const createGroupMutation = useMutation({
-    mutationFn: async (dto: CreateGroupDto) => {
-      const response = await api.post('/groups', dto)
+  const createClubMutation = useMutation({
+    mutationFn: async (dto: CreateClubDto) => {
+      const response = await api.post('/clubs', dto)
       return response.data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      queryClient.invalidateQueries({ queryKey: ['clubs'] })
       setIsCreateModalOpen(false)
-      setNewGroupName('')
-      setNewGroupDescription('')
+      setNewClubName('')
+      setNewClubDescription('')
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Erro ao criar grupo')
@@ -111,14 +111,14 @@ export default function GroupsPage() {
   })
 
   const addMemberMutation = useMutation({
-    mutationFn: async ({ groupId, dto }: { groupId: string; dto: AddMemberDto }) => {
-      const response = await api.post(`/groups/${groupId}/members`, dto)
+    mutationFn: async ({ clubId, dto }: { clubId: string; dto: AddMemberDto }) => {
+      const response = await api.post(`/clubs/${clubId}/members`, dto)
       return response.data
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['groups'] })
+      queryClient.invalidateQueries({ queryKey: ['clubs'] })
       setIsAddMemberModalOpen(false)
-      setSelectedGroupId(null)
+      setSelectedClubId(null)
       setSelectedUserId('')
       setMemberRole('MEMBER')
     },
@@ -128,8 +128,8 @@ export default function GroupsPage() {
   })
 
   const importInvitesMutation = useMutation({
-    mutationFn: async ({ groupId, invites }: { groupId: string; invites: InviteItem[] }) => {
-      const response = await api.post(`/groups/${groupId}/import-invites`, {
+    mutationFn: async ({ clubId, invites }: { clubId: string; invites: InviteItem[] }) => {
+      const response = await api.post(`/clubs/${clubId}/import-invites`, {
         invites: invites
           .filter((i) => i.isValid)
           .map(({ name, phone, company, companyDescription }) => ({
@@ -150,41 +150,41 @@ export default function GroupsPage() {
     },
   })
 
-  const filteredGroups = groups.filter(
-    (group) =>
-      group.name.toLowerCase().includes(search.toLowerCase()) ||
-      group.slug.toLowerCase().includes(search.toLowerCase())
+  const filteredClubs = clubs.filter(
+    (club) =>
+      club.name.toLowerCase().includes(search.toLowerCase()) ||
+      club.slug.toLowerCase().includes(search.toLowerCase())
   )
 
-  const handleCreateGroup = () => {
-    if (!newGroupName.trim()) {
+  const handleCreateClub = () => {
+    if (!newClubName.trim()) {
       alert('Nome do grupo é obrigatório')
       return
     }
-    createGroupMutation.mutate({
-      name: newGroupName,
-      description: newGroupDescription || undefined,
+    createClubMutation.mutate({
+      name: newClubName,
+      description: newClubDescription || undefined,
     })
   }
 
   const handleAddMember = () => {
-    if (!selectedGroupId || !selectedUserId) {
+    if (!selectedClubId || !selectedUserId) {
       alert('Selecione um usuário')
       return
     }
     addMemberMutation.mutate({
-      groupId: selectedGroupId,
+      clubId: selectedClubId,
       dto: { userId: selectedUserId, role: memberRole },
     })
   }
 
-  const openAddMemberModal = (groupId: string) => {
-    setSelectedGroupId(groupId)
+  const openAddMemberModal = (clubId: string) => {
+    setSelectedClubId(clubId)
     setIsAddMemberModalOpen(true)
   }
 
-  const openImportModal = (groupId: string) => {
-    setImportGroupId(groupId)
+  const openImportModal = (clubId: string) => {
+    setImportClubId(clubId)
     setImportPreview([])
     setImportResult(null)
     setIsImportModalOpen(true)
@@ -192,7 +192,7 @@ export default function GroupsPage() {
 
   const closeImportModal = () => {
     setIsImportModalOpen(false)
-    setImportGroupId(null)
+    setImportClubId(null)
     setImportPreview([])
     setImportResult(null)
   }
@@ -289,13 +289,13 @@ export default function GroupsPage() {
   }
 
   const handleImport = () => {
-    if (!importGroupId) return
+    if (!importClubId) return
     const validInvites = importPreview.filter((i) => i.isValid)
     if (validInvites.length === 0) {
       alert('Nenhum registro válido para importar')
       return
     }
-    importInvitesMutation.mutate({ groupId: importGroupId, invites: importPreview })
+    importInvitesMutation.mutate({ clubId: importClubId, invites: importPreview })
   }
 
   return (
@@ -307,8 +307,8 @@ export default function GroupsPage() {
 
       <div className="relative z-10">
         <Header
-          title="Grupos / Empresas Patrocinadoras"
-          description="Gerencie grupos e suas tags oficiais"
+          title="Clubes / Empresas Patrocinadoras"
+          description="Gerencie clubes e suas tags oficiais"
         />
 
         <div className="p-6 space-y-6">
@@ -328,11 +328,11 @@ export default function GroupsPage() {
               className="gap-2 bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white"
             >
               <Plus className="h-4 w-4" />
-              Novo Grupo
+              Novo Clube
             </Button>
           </div>
 
-          {/* Tabela de grupos */}
+          {/* Tabela de clubes */}
           <div className="glass-card overflow-hidden">
             {isLoading ? (
               <div className="flex items-center justify-center p-12">
@@ -344,7 +344,7 @@ export default function GroupsPage() {
                   <thead className="border-b border-white/10 bg-white/5">
                     <tr>
                       <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                        Grupo
+                        Clube
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
                         Slug
@@ -367,18 +367,18 @@ export default function GroupsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-white/5">
-                    {filteredGroups.map((group) => (
-                      <tr key={group.id} className="hover:bg-white/5 transition-colors">
+                    {filteredClubs.map((club) => (
+                      <tr key={club.id} className="hover:bg-white/5 transition-colors">
                         <td className="whitespace-nowrap px-6 py-4">
                           <div className="flex items-center gap-3">
                             <div className="flex h-10 w-10 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 to-purple-400 text-sm font-medium text-white shadow-lg glow-purple">
                               <Building2 className="h-5 w-5" />
                             </div>
                             <div>
-                              <p className="font-medium text-white">{group.name}</p>
-                              {group.description && (
+                              <p className="font-medium text-white">{club.name}</p>
+                              {club.description && (
                                 <p className="text-sm text-gray-400 truncate max-w-xs">
-                                  {group.description}
+                                  {club.description}
                                 </p>
                               )}
                             </div>
@@ -386,40 +386,40 @@ export default function GroupsPage() {
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">
                           <span className="text-sm text-gray-400 bg-white/5 px-2 py-1 rounded font-mono">
-                            {group.slug}
+                            {club.slug}
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">
                           <span
                             className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-xs font-medium ${
-                              group.isActive
+                              club.isActive
                                 ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                                 : 'bg-red-500/20 text-red-400 border border-red-500/30'
                             }`}
                           >
-                            <span className={`h-1.5 w-1.5 rounded-full ${group.isActive ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
-                            {group.isActive ? 'Ativo' : 'Inativo'}
+                            <span className={`h-1.5 w-1.5 rounded-full ${club.isActive ? 'bg-emerald-400 animate-pulse' : 'bg-red-400'}`} />
+                            {club.isActive ? 'Ativo' : 'Inativo'}
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">
                           <span className="text-sm text-gray-300 bg-white/5 px-2 py-1 rounded">
-                            {group._count?.members ?? 0}
+                            {club._count?.members ?? 0}
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4">
                           <span className="text-sm text-gray-300 bg-white/5 px-2 py-1 rounded">
-                            {group._count?.tags ?? 0}
+                            {club._count?.tags ?? 0}
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">
-                          {new Date(group.createdAt).toLocaleDateString('pt-BR')}
+                          {new Date(club.createdAt).toLocaleDateString('pt-BR')}
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-right">
                           <div className="flex items-center justify-end gap-2">
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => openImportModal(group.id)}
+                              onClick={() => openImportModal(club.id)}
                               className="gap-2 bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
                             >
                               <Upload className="h-4 w-4" />
@@ -428,7 +428,7 @@ export default function GroupsPage() {
                             <Button
                               variant="outline"
                               size="sm"
-                              onClick={() => openAddMemberModal(group.id)}
+                              onClick={() => openAddMemberModal(club.id)}
                               className="gap-2 bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
                             >
                               <UserPlus className="h-4 w-4" />
@@ -441,7 +441,7 @@ export default function GroupsPage() {
                   </tbody>
                 </table>
 
-                {filteredGroups.length === 0 && (
+                {filteredClubs.length === 0 && (
                   <div className="flex flex-col items-center justify-center py-12 text-gray-400">
                     <div className="p-4 rounded-full bg-white/5 mb-4">
                       <Building2 className="h-12 w-12" />
@@ -454,19 +454,19 @@ export default function GroupsPage() {
           </div>
         </div>
 
-        {/* Modal Criar Grupo */}
+        {/* Modal Criar Clube */}
         {isCreateModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
             <div className="w-full max-w-md glass-card p-6">
-              <h2 className="mb-4 text-lg font-semibold text-white">Criar Novo Grupo</h2>
+              <h2 className="mb-4 text-lg font-semibold text-white">Criar Novo Clube</h2>
               <div className="space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-300">
-                    Nome do Grupo *
+                    Nome do Clube *
                   </label>
                   <Input
-                    value={newGroupName}
-                    onChange={(e) => setNewGroupName(e.target.value)}
+                    value={newClubName}
+                    onChange={(e) => setNewClubName(e.target.value)}
                     placeholder="Ex: Empresa XYZ"
                     className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                   />
@@ -476,8 +476,8 @@ export default function GroupsPage() {
                     Descrição
                   </label>
                   <Input
-                    value={newGroupDescription}
-                    onChange={(e) => setNewGroupDescription(e.target.value)}
+                    value={newClubDescription}
+                    onChange={(e) => setNewClubDescription(e.target.value)}
                     placeholder="Descrição opcional"
                     className="bg-white/5 border-white/10 text-white placeholder:text-gray-500"
                   />
@@ -488,19 +488,19 @@ export default function GroupsPage() {
                   variant="outline"
                   onClick={() => {
                     setIsCreateModalOpen(false)
-                    setNewGroupName('')
-                    setNewGroupDescription('')
+                    setNewClubName('')
+                    setNewClubDescription('')
                   }}
                   className="bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
                 >
                   Cancelar
                 </Button>
                 <Button
-                  onClick={handleCreateGroup}
-                  disabled={createGroupMutation.isPending}
+                  onClick={handleCreateClub}
+                  disabled={createClubMutation.isPending}
                   className="bg-gradient-to-r from-blue-500 to-indigo-500 hover:from-blue-600 hover:to-indigo-600 text-white"
                 >
-                  {createGroupMutation.isPending ? 'Criando...' : 'Criar Grupo'}
+                  {createClubMutation.isPending ? 'Criando...' : 'Criar Clube'}
                 </Button>
               </div>
             </div>
@@ -511,7 +511,7 @@ export default function GroupsPage() {
         {isAddMemberModalOpen && (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm">
             <div className="w-full max-w-md glass-card p-6">
-              <h2 className="mb-4 text-lg font-semibold text-white">Adicionar Membro ao Grupo</h2>
+              <h2 className="mb-4 text-lg font-semibold text-white">Adicionar Membro ao Clube</h2>
               <div className="space-y-4">
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-300">
@@ -532,7 +532,7 @@ export default function GroupsPage() {
                 </div>
                 <div>
                   <label className="mb-1 block text-sm font-medium text-gray-300">
-                    Papel no Grupo *
+                    Papel no Clube *
                   </label>
                   <select
                     value={memberRole}
@@ -540,7 +540,7 @@ export default function GroupsPage() {
                     className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
                   >
                     <option value="MEMBER" className="bg-gray-900">Membro</option>
-                    <option value="ADMIN" className="bg-gray-900">Administrador do Grupo</option>
+                    <option value="ADMIN" className="bg-gray-900">Administrador do Clube</option>
                   </select>
                 </div>
               </div>
@@ -549,7 +549,7 @@ export default function GroupsPage() {
                   variant="outline"
                   onClick={() => {
                     setIsAddMemberModalOpen(false)
-                    setSelectedGroupId(null)
+                    setSelectedClubId(null)
                     setSelectedUserId('')
                     setMemberRole('MEMBER')
                   }}
