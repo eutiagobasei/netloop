@@ -14,12 +14,12 @@ import { MemoryModule } from '../memory/memory.module';
 @Module({
   imports: [
     forwardRef(() => ContactsModule),
-    ConnectionsModule,
+    forwardRef(() => ConnectionsModule),
     forwardRef(() => AIModule),
     SettingsModule,
     forwardRef(() => RegistrationModule),
     UsersModule,
-    MemoryModule,
+    forwardRef(() => MemoryModule),
   ],
   controllers: [WhatsappController],
   providers: [
