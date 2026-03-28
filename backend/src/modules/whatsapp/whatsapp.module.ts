@@ -13,7 +13,7 @@ import { MemoryModule } from '../memory/memory.module';
 
 @Module({
   imports: [
-    ContactsModule,
+    forwardRef(() => ContactsModule),
     ConnectionsModule,
     forwardRef(() => AIModule),
     SettingsModule,
