@@ -41,7 +41,7 @@ interface CreateClubDto {
 
 interface AddMemberDto {
   userId: string
-  role: 'ADMIN' | 'MEMBER'
+  isAdmin?: boolean
 }
 
 interface InviteItem {
@@ -69,7 +69,7 @@ export default function ClubsPage() {
   const [newClubName, setNewClubName] = useState('')
   const [newClubDescription, setNewClubDescription] = useState('')
   const [selectedUserId, setSelectedUserId] = useState('')
-  const [memberRole, setMemberRole] = useState<'ADMIN' | 'MEMBER'>('MEMBER')
+  const [isAdmin, setIsAdmin] = useState(false)
   const [isImportModalOpen, setIsImportModalOpen] = useState(false)
   const [importClubId, setImportClubId] = useState<string | null>(null)
   const [importPreview, setImportPreview] = useState<InviteItem[]>([])
@@ -120,7 +120,7 @@ export default function ClubsPage() {
       setIsAddMemberModalOpen(false)
       setSelectedClubId(null)
       setSelectedUserId('')
-      setMemberRole('MEMBER')
+      setIsAdmin(false)
     },
     onError: (error: any) => {
       alert(error.response?.data?.message || 'Erro ao adicionar membro')
@@ -174,7 +174,7 @@ export default function ClubsPage() {
     }
     addMemberMutation.mutate({
       clubId: selectedClubId,
-      dto: { userId: selectedUserId, role: memberRole },
+      dto: { userId: selectedUserId, isAdmin },
     })
   }
 
@@ -532,18 +532,17 @@ export default function ClubsPage() {
                     ))}
                   </select>
                 </div>
-                <div>
-                  <label className="mb-1 block text-sm font-medium text-gray-300">
-                    Papel no Clube *
+                <div className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    id="isAdmin"
+                    checked={isAdmin}
+                    onChange={(e) => setIsAdmin(e.target.checked)}
+                    className="h-4 w-4 rounded border-white/10 bg-white/5 text-blue-500 focus:ring-blue-500/20"
+                  />
+                  <label htmlFor="isAdmin" className="text-sm font-medium text-gray-300">
+                    Adicionar como administrador do clube
                   </label>
-                  <select
-                    value={memberRole}
-                    onChange={(e) => setMemberRole(e.target.value as 'ADMIN' | 'MEMBER')}
-                    className="w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-sm text-white focus:border-blue-500/50 focus:outline-none focus:ring-1 focus:ring-blue-500/20"
-                  >
-                    <option value="MEMBER" className="bg-gray-900">Membro</option>
-                    <option value="ADMIN" className="bg-gray-900">Administrador do Clube</option>
-                  </select>
                 </div>
               </div>
               <div className="mt-6 flex justify-end gap-3">
@@ -553,7 +552,7 @@ export default function ClubsPage() {
                     setIsAddMemberModalOpen(false)
                     setSelectedClubId(null)
                     setSelectedUserId('')
-                    setMemberRole('MEMBER')
+                    setIsAdmin(false)
                   }}
                   className="bg-white/5 border-white/10 text-gray-300 hover:bg-white/10 hover:text-white"
                 >
