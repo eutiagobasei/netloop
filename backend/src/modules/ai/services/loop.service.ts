@@ -161,9 +161,11 @@ export class LoopService {
     contact: ConnectionWithContact['contact'],
     connection: ConnectionWithContact,
   ): LoopContact {
-    // Combina context e notes para dar mais informação à IA
+    // Combina todas as informações relevantes para dar contexto à IA
     const contextParts: string[] = [];
+    if (contact.professionalInfo) contextParts.push(`Profissional: ${contact.professionalInfo}`);
     if (connection.context) contextParts.push(`Contexto: ${connection.context}`);
+    if (contact.relationshipContext) contextParts.push(`Relacionamento: ${contact.relationshipContext}`);
     if (contact.context) contextParts.push(`Info: ${contact.context}`);
     if (contact.notes) contextParts.push(`Notas: ${contact.notes}`);
 
@@ -172,8 +174,7 @@ export class LoopService {
     return {
       id: contact.id,
       name: contact.name,
-      profession: contact.position || '',
-      company: contact.company || '',
+      profession: contact.professionalInfo || '', // Campo unificado de info profissional
       skills: contact.tags?.map((ct) => ct.tag.name) || [],
       level: 1,
       connected_through: null,
@@ -280,9 +281,8 @@ export class LoopService {
         id: c.id,
         name: c.name,
         profession: c.profession,
-        company: c.company,
         skills: c.skills,
-        context_and_notes: c.interaction_notes, // Renomeado para ficar mais claro
+        context_and_notes: c.interaction_notes, // Contexto completo incluindo notas
       })),
       null,
       2,
