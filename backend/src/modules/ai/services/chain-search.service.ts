@@ -109,14 +109,8 @@ export class ChainSearchService {
     return contacts
       .slice(0, 20) // Limita para não exceder tokens
       .map((c) => {
-        const parts = [
-          `- ID: ${c.id}`,
-          `Nome: ${c.name}`,
-          `Área: ${c.area || 'não especificada'}`,
-          `Ponte: ${c.connectorName} (ID: ${c.connectorId})`,
-        ];
-        if (c.connectorPhone) parts.push(`Tel ponte: ${c.connectorPhone}`);
-        return parts.join(' | ');
+        // Formato claro: este é contato de 2º GRAU, precisa de PONTE para apresentação
+        return `- [2º GRAU] Nome: ${c.name} | Área: ${c.area || 'não especificada'} | PONTE OBRIGATÓRIA: ${c.connectorName} (Tel: ${c.connectorPhone || 'sem tel'}, ID: ${c.connectorId})`;
       })
       .join('\n');
   }
