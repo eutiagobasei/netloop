@@ -20,6 +20,7 @@ export interface GraphNode {
   phone?: string | null;
   email?: string | null;
   context?: string | null;
+  notes?: string | null;
   location?: string | null;
   sharedByCount?: number;
   sharedByUsers?: { id: string; name: string }[];

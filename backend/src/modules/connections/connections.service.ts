@@ -357,6 +357,7 @@ export class ConnectionsService {
           phone: conn.contact.phone,
           email: conn.contact.email,
           context: conn.context, // Contexto da CONEXÃO (como você conhece a pessoa)
+          notes: conn.contact.notes, // Notas sobre o contato
           location: conn.contact.location,
           // REMOVIDO: sharedByUsers - não mostra quem mais conhece este contato
           // Isso violava privacidade ao expor nomes de outros usuários
