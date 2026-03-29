@@ -109,12 +109,12 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
           </div>
         )}
 
-        {node.context && (
+        {(node.context || node.notes) && (
           <div className="flex items-start gap-2">
             <FileText className="h-4 w-4 mt-0.5 text-gray-500" />
             <div>
               <p className="text-sm font-medium text-gray-400">Contexto</p>
-              <p className="text-sm text-gray-200 whitespace-pre-line">{node.context}</p>
+              <p className="text-sm text-gray-200 whitespace-pre-line">{node.notes || node.context}</p>
             </div>
           </div>
         )}
