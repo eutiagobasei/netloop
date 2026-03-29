@@ -821,6 +821,7 @@ export class ContactsService {
     id: string;
     name: string;
     context?: string;
+    notes?: string;
     phone?: string;
   }>> {
     const contacts = await this.prisma.$queryRaw<any[]>`
@@ -830,6 +831,7 @@ export class ContactsService {
         c.phone,
         c.email,
         c.context,
+        c.notes,
         c.location,
         conn.context as "connectionContext"
       FROM contacts c
@@ -839,12 +841,13 @@ export class ContactsService {
       LIMIT 100
     `;
 
-    // Combinar contexto do contato com contexto da conexão
+    // Combinar contexto do contato com contexto da conexão + notas
     return contacts.map((c) => ({
       id: c.id,
       name: c.name,
       phone: c.phone,
       context: c.connectionContext || c.context || '',
+      notes: c.notes || '',
     }));
   }
 

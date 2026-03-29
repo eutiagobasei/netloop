@@ -1135,6 +1135,7 @@ export class WhatsappService {
               id: c.id,
               name: c.name,
               context: c.context || undefined,
+              notes: c.notes || undefined,
               phone: c.phone || undefined,
             })),
             secondDegreeContacts,
