@@ -1111,71 +1111,49 @@ export class WhatsappService {
         await this.aiService.classifyAndExtract(transcription);
       this.logger.log(`Intenção detectada para ${messageId}: ${intent}, subject: ${querySubject}`);
 
-      // 2. SE FOR QUERY → USAR SMART SEARCH COM IA
+      // 2. SE FOR QUERY → USAR CHAIN SEARCH COM IA (Raciocínio em Cadeia)
       if (intent === 'query') {
         if (querySubject) {
-          // Buscar todos os contatos com contexto
+          // Buscar todos os contatos de 1º grau com contexto
           const allContacts = await this.contactsService.getAllContactsForSmartSearch(message.userId);
 
-          // Verificar se há clarificação pendente
-          const pendingClarification = this.pendingDisambiguations.get(fromPhone);
-          const clarification = pendingClarification?.clarificationContext;
+          // Buscar contatos de 2º grau para análise em cadeia
+          const secondDegreeContacts = await this.connectionsService.getSecondDegreeContactsForChainSearch(
+            message.userId,
+            querySubject,
+          );
 
-          // Usar Smart Search com IA
-          const smartResult = await this.aiService.processSmartSearch({
-            userName: message.user?.name || 'Usuário',
-            userMessage: querySubject,
-            contacts: allContacts,
-            clarification,
+          this.logger.log(
+            `Chain Search: ${allContacts.length} contatos 1º grau, ${secondDegreeContacts.length} contatos 2º grau`,
+          );
+
+          // Usar Chain Search com IA (raciocínio em cadeia)
+          const chainResult = await this.aiService.processChainSearch({
+            userId: message.userId,
+            userQuery: querySubject,
+            contacts: allContacts.map((c) => ({
+              id: c.id,
+              name: c.name,
+              context: c.context || undefined,
+              phone: c.phone || undefined,
+            })),
+            secondDegreeContacts,
           });
 
-          this.logger.log(`Smart Search resultado: action=${smartResult.action}`);
+          this.logger.log(`Chain Search resultado: matchType=${chainResult.matchType}`);
 
-          // Limpar clarificação pendente se existir
-          if (pendingClarification) {
-            this.pendingDisambiguations.delete(fromPhone);
-          }
+          // MATCH DIRETO - encontrou contato que atende diretamente
+          if (chainResult.matchType === 'direct' && chainResult.contacts.length > 0) {
+            const bestMatch = chainResult.contacts[0];
+            const contact = allContacts.find((c) => c.id === bestMatch.id);
 
-          // AÇÃO: CLARIFICAR - termo ambíguo
-          if (smartResult.action === 'clarify' && smartResult.options) {
-            const optionsList = smartResult.options
-              .map((opt, i) => `${i + 1}. *${opt.label}* - ${opt.description}`)
-              .join('\n');
+            if (contact) {
+              await this.sendTextMessage(fromPhone, `🎯 ${chainResult.message}`);
 
-            const disambiguationMessage = `🤔 ${smartResult.message}\n\n${optionsList}\n\nResponda com o número da opção desejada.`;
-
-            await this.sendTextMessage(fromPhone, disambiguationMessage);
-
-            // Salvar estado de disambiguação
-            this.pendingDisambiguations.set(fromPhone, {
-              userId: message.userId,
-              originalQuery: querySubject,
-              term: querySubject,
-              options: smartResult.options,
-              timestamp: Date.now(),
-            });
-
-            await this.prisma.whatsappMessage.update({
-              where: { id: messageId },
-              data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
-            });
-
-            return;
-          }
-
-          // AÇÃO: RESULTADOS - encontrou contatos relevantes
-          if (smartResult.action === 'results' && smartResult.results && smartResult.bestMatchId) {
-            const bestContact = allContacts.find((c) => c.id === smartResult.bestMatchId);
-
-            if (bestContact) {
-              // Enviar mensagem explicativa da IA
-              await this.sendTextMessage(fromPhone, `🎯 ${smartResult.message}`);
-
-              // Enviar vCard se tiver telefone
-              if (bestContact.phone) {
+              if (contact.phone) {
                 await this.sendContact(fromPhone, {
-                  fullName: bestContact.name,
-                  phoneNumber: bestContact.phone,
+                  fullName: contact.name,
+                  phoneNumber: contact.phone,
                 });
               }
 
@@ -1184,24 +1162,77 @@ export class WhatsappService {
                 data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
               });
 
-              this.logger.log(`Smart Search: retornou ${bestContact.name} para "${querySubject}"`);
+              this.logger.log(`Chain Search: match direto ${contact.name} para "${querySubject}"`);
               return;
             }
           }
 
-          // AÇÃO: NÃO ENCONTROU - Smart Search não achou nenhum contato relevante
-          // Usar mensagem da IA ao invés de fallback para busca antiga
-          await this.sendTextMessage(
-            fromPhone,
-            smartResult.message || '😕 Não encontrei nenhum contato que corresponda à sua busca na sua rede.',
-          );
+          // MATCH INDIRETO (domínio relacionado) - alguém que pode indicar
+          if (chainResult.matchType === 'indirect_domain' && chainResult.contacts.length > 0) {
+            const bestMatch = chainResult.contacts[0];
+            const contact = allContacts.find((c) => c.id === bestMatch.id);
+
+            if (contact) {
+              // Mensagem explicando a conexão indireta
+              await this.sendTextMessage(fromPhone, `💡 ${chainResult.message}`);
+
+              // Enviar contato para o usuário poder entrar em contato
+              if (contact.phone) {
+                await this.sendContact(fromPhone, {
+                  fullName: contact.name,
+                  phoneNumber: contact.phone,
+                });
+              }
+
+              await this.prisma.whatsappMessage.update({
+                where: { id: messageId },
+                data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
+              });
+
+              this.logger.log(`Chain Search: match indireto ${contact.name} para "${querySubject}"`);
+              return;
+            }
+          }
+
+          // BRIDGE (via 2º grau) - encontrou via rede de contatos
+          if (chainResult.matchType === 'bridge' && chainResult.bridge) {
+            // Envia mensagem explicando a conexão via ponte
+            await this.sendTextMessage(fromPhone, `🌉 ${chainResult.message}`);
+
+            // Salva estado para aguardar confirmação
+            this.pendingIntroRequests.set(fromPhone, {
+              connectorName: chainResult.bridge.name,
+              connectorPhone: chainResult.bridge.phone,
+              area: querySubject,
+              query: querySubject,
+              requesterName: message.user?.name || 'Usuário',
+              timestamp: Date.now(),
+            });
+
+            await this.prisma.whatsappMessage.update({
+              where: { id: messageId },
+              data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
+            });
+
+            this.logger.log(
+              `Chain Search: bridge via ${chainResult.bridge.name} para "${querySubject}"`,
+            );
+            return;
+          }
+
+          // NÃO ENCONTROU - nenhum match direto, indireto ou bridge
+          await this.sendTextMessage(fromPhone, chainResult.message);
+
+          if (chainResult.suggestion) {
+            await this.sendTextMessage(fromPhone, `💡 ${chainResult.suggestion}`);
+          }
 
           await this.prisma.whatsappMessage.update({
             where: { id: messageId },
             data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
           });
 
-          this.logger.log(`Smart Search: não encontrou resultados para "${querySubject}"`);
+          this.logger.log(`Chain Search: não encontrou resultados para "${querySubject}"`);
           return;
         } else {
           // Não conseguiu extrair o assunto, responde pedindo mais detalhes

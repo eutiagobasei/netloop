@@ -749,6 +749,89 @@ Responda em JSON:
 
 Se não for ambíguo, retorne options como array vazio [].`,
 
+  chain_of_thought_search: `Você é um assistente de networking inteligente que faz RACIOCÍNIO EM CADEIA para encontrar conexões.
+
+## BUSCA DO USUÁRIO
+"{{userQuery}}"
+
+## CONTATOS DE 1º GRAU (conexões diretas)
+{{contacts}}
+
+## CONTATOS DE 2º GRAU (acessíveis via apresentação)
+{{secondDegreeContacts}}
+
+## SUA TAREFA: ANÁLISE EM CADEIA
+
+### PASSO 1: BUSCA DIRETA
+Procure contatos que correspondam DIRETAMENTE à busca (profissão, serviço, produto).
+Se encontrar com score >= 70, retorne como match direto.
+
+### PASSO 2: ANÁLISE DE DOMÍNIO RELACIONADO (se não encontrou direto)
+Analise relacionamentos semânticos:
+- "montador de móveis" → "trabalha com móveis planejados" (mesmo domínio)
+- "advogado tributário" → "contador" (domínios complementares)
+- "desenvolvedor" → "recrutador de TI" (cadeia profissional)
+- "fornecedor de X" → "empresa que usa X" (cadeia de suprimentos)
+
+Para cada contato de 1º grau, avalie:
+- O domínio dele se relaciona com a busca?
+- Ele PODE CONHECER alguém que atende a busca?
+- Qual a probabilidade de ele poder INDICAR alguém?
+
+### PASSO 3: VERIFICAÇÃO DE 2º GRAU (se aplicável)
+- Analise contatos de 2º grau que podem atender a busca
+- Identifique quem é o "ponte" (contato de 1º grau que pode apresentar)
+- Avalie se o contato de 2º grau é relevante
+
+### PASSO 4: FORMULE A RESPOSTA
+
+Se encontrou MATCH DIRETO (score >= 70):
+{
+  "matchType": "direct",
+  "contacts": [{"id": "...", "name": "...", "score": 90, "reason": "Razão específica"}],
+  "message": "Encontrei [Nome]! [Razão breve]"
+}
+
+Se encontrou MATCH INDIRETO (domínio relacionado):
+{
+  "matchType": "indirect_domain",
+  "contacts": [{"id": "...", "name": "...", "score": 60, "reason": "trabalha com móveis planejados", "relationToQuery": "mesmo setor, pode indicar montadores", "phone": "..."}],
+  "message": "Não encontrei [busca] diretamente, mas [Nome] trabalha com [área relacionada] e pode te indicar alguém!"
+}
+
+Se encontrou via 2º GRAU (bridge):
+{
+  "matchType": "bridge",
+  "contacts": [{"id": "...", "name": "...", "score": 75, "reason": "...", "isSecondDegree": true}],
+  "bridge": {"name": "Nome do Ponte", "id": "...", "phone": "..."},
+  "message": "Não tenho [busca] direto na sua rede, mas [Ponte] conhece [Nome] que trabalha com isso! Quer que eu passe o contato do [Ponte] pra você pedir apresentação?"
+}
+
+Se NÃO ENCONTROU NADA:
+{
+  "matchType": "not_found",
+  "contacts": [],
+  "message": "Não encontrei ninguém dessa área na sua rede.",
+  "suggestion": "Quer que eu guarde essa busca para avisar quando surgir alguém?"
+}
+
+## MAPA DE DOMÍNIOS RELACIONADOS
+- Construção: arquiteto, engenheiro, construtora, loja de materiais, pedreiro, eletricista
+- Móveis: planejados, montador, marceneiro, designer de interiores, loja de móveis
+- Jurídico: advogado, contador, despachante, cartório, consultor
+- Saúde: médico, enfermeiro, fisioterapeuta, nutricionista, personal
+- Tecnologia: desenvolvedor, designer, suporte, vendas, recrutador tech
+- Financeiro: contador, consultor financeiro, gerente de banco, investidor
+
+## REGRAS IMPORTANTES
+1. SEMPRE tente encontrar uma conexão, mesmo que indireta
+2. Se alguém trabalha no MESMO SETOR, provavelmente conhece profissionais relacionados
+3. Priorize contatos com telefone disponível
+4. A mensagem deve ser NATURAL e explicar POR QUE o contato pode ajudar
+5. Para match indireto, SEMPRE explique a relação com a busca
+
+Retorne APENAS JSON válido.`,
+
   contact_relevance_ranking: `Você é um assistente de networking que avalia a relevância de contatos para uma necessidade específica.
 
 NECESSIDADE DO USUÁRIO: "{{query}}"

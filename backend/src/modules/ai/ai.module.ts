@@ -7,6 +7,7 @@ import { ExtractionService } from './services/extraction.service';
 import { EmbeddingService } from './services/embedding.service';
 import { EmbeddingCacheService } from './services/embedding-cache.service';
 import { LoopService } from './services/loop.service';
+import { ChainSearchService } from './services/chain-search.service';
 import { SettingsModule } from '../settings/settings.module';
 import { ContactsModule } from '../contacts/contacts.module';
 
@@ -21,6 +22,7 @@ import { ContactsModule } from '../contacts/contacts.module';
     EmbeddingService,
     EmbeddingCacheService,
     LoopService,
+    ChainSearchService,
   ],
   exports: [
     AIService,
@@ -29,6 +31,7 @@ import { ContactsModule } from '../contacts/contacts.module';
     EmbeddingService,
     EmbeddingCacheService,
     LoopService,
+    ChainSearchService,
   ],
 })
 export class AIModule {}

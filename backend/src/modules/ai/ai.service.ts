@@ -8,8 +8,10 @@ import {
 } from './services/extraction.service';
 import { EmbeddingService } from './services/embedding.service';
 import { LoopService } from './services/loop.service';
+import { ChainSearchService } from './services/chain-search.service';
 import { ExtractionResult } from './dto/extracted-contact.dto';
 import { LoopPlanResponse } from './dto/loop.dto';
+import { ChainSearchParams, ChainSearchResult } from './dto/chain-search.dto';
 
 @Injectable()
 export class AIService {
@@ -21,6 +23,7 @@ export class AIService {
     private readonly extractionService: ExtractionService,
     private readonly embeddingService: EmbeddingService,
     private readonly loopService: LoopService,
+    private readonly chainSearchService: ChainSearchService,
   ) {}
 
   /**
@@ -213,5 +216,13 @@ export class AIService {
     suggestion?: string;
   }> {
     return this.extractionService.findContactByNameAI(searchName, contacts);
+  }
+
+  /**
+   * Busca inteligente com raciocínio em cadeia
+   * Encontra matches diretos, indiretos (domínio relacionado) ou via rede de 2º grau
+   */
+  async processChainSearch(params: ChainSearchParams): Promise<ChainSearchResult> {
+    return this.chainSearchService.processChainSearch(params);
   }
 }

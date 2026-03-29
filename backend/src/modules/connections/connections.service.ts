@@ -686,4 +686,114 @@ export class ConnectionsService {
       };
     });
   }
+
+  /**
+   * Busca contatos de 2º grau para Chain Search (raciocínio em cadeia)
+   * Retorna dados no formato esperado pelo ChainSearchService
+   */
+  async getSecondDegreeContactsForChainSearch(
+    userId: string,
+    query: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      area?: string;
+      connectorId: string;
+      connectorName: string;
+      connectorPhone: string | null;
+    }>
+  > {
+    this.logger.log(`[Chain Search 2º grau] userId=${userId}, query="${query}"`);
+
+    // Busca contatos de 1º grau
+    const firstDegreeContacts = await this.prisma.connection.findMany({
+      where: { fromUserId: userId },
+      include: {
+        contact: {
+          select: { id: true, name: true, phone: true },
+        },
+      },
+    });
+
+    if (firstDegreeContacts.length === 0) {
+      return [];
+    }
+
+    // Monta mapa de phone -> contato de 1º grau
+    const phoneToFirstDegree = new Map<string, { id: string; name: string; phone: string }>();
+    const allPhoneVariations: string[] = [];
+
+    for (const conn of firstDegreeContacts) {
+      if (conn.contact.phone) {
+        const variations = PhoneUtil.getVariations(conn.contact.phone);
+        for (const v of variations) {
+          phoneToFirstDegree.set(v, {
+            id: conn.contact.id,
+            name: conn.contact.name,
+            phone: conn.contact.phone,
+          });
+          allPhoneVariations.push(v);
+        }
+      }
+    }
+
+    // Busca usuários que são meus contatos de 1º grau
+    const connectedUsers = await this.prisma.user.findMany({
+      where: {
+        phone: { in: allPhoneVariations },
+        id: { not: userId },
+      },
+      select: { id: true, name: true, phone: true },
+    });
+
+    if (connectedUsers.length === 0) {
+      return [];
+    }
+
+    const connectedUserIds = connectedUsers.map((u) => u.id);
+
+    // Busca todos os contatos dos usuários conectados (sem filtro de busca)
+    // O filtro semântico será feito pela IA
+    const secondDegreeContacts = await this.prisma.contact.findMany({
+      where: {
+        ownerId: { in: connectedUserIds },
+      },
+      select: {
+        id: true,
+        name: true,
+        context: true,
+        notes: true,
+        professionalInfo: true,
+        ownerId: true,
+        owner: {
+          select: { id: true, name: true, phone: true },
+        },
+      },
+      take: 30, // Limita para não exceder tokens da IA
+    });
+
+    this.logger.log(`[Chain Search 2º grau] Encontrados: ${secondDegreeContacts.length}`);
+
+    return secondDegreeContacts.map((c) => {
+      const ownerPhone = c.owner.phone;
+      const connector = ownerPhone
+        ? phoneToFirstDegree.get(ownerPhone) ||
+          phoneToFirstDegree.get(PhoneUtil.normalize(ownerPhone) || '')
+        : null;
+
+      // Concatena contexto + notas + professionalInfo para área
+      const areaParts = [c.context, c.professionalInfo, c.notes].filter(Boolean);
+      const area = areaParts.join(' | ') || undefined;
+
+      return {
+        id: c.id,
+        name: c.name,
+        area,
+        connectorId: connector?.id || c.owner.id,
+        connectorName: connector?.name || c.owner.name,
+        connectorPhone: ownerPhone,
+      };
+    });
+  }
 }
