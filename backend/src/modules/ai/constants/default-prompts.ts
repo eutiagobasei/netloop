@@ -792,12 +792,22 @@ Se encontrou MATCH DIRETO (score >= 70):
   "message": "Encontrei [Nome]! [Razão breve]"
 }
 
-Se encontrou MATCH INDIRETO (domínio relacionado):
+Se encontrou MATCH INDIRETO (domínio relacionado) em contato de 1º GRAU:
 {
   "matchType": "indirect_domain",
   "contacts": [{"id": "...", "name": "...", "score": 60, "reason": "trabalha com móveis planejados", "relationToQuery": "mesmo setor, pode indicar montadores", "phone": "..."}],
   "message": "Não encontrei [busca] diretamente, mas [Nome] trabalha com [área relacionada] e pode te indicar alguém!"
 }
+
+Se encontrou MATCH INDIRETO via contato de 2º GRAU (IMPORTANTE - sempre use bridge!):
+{
+  "matchType": "bridge",
+  "contacts": [{"id": "id-do-contato-2grau", "name": "Nome 2º grau", "score": 70, "reason": "trabalha na área", "isSecondDegree": true}],
+  "bridge": {"name": "Nome do contato 1º grau (ponte)", "id": "id-ponte", "phone": "telefone-ponte"},
+  "message": "Não encontrei [busca] direto, mas [Nome do Ponte] conhece [Nome 2º grau] que trabalha com [área]! Fale com [Nome do Ponte] para pedir a apresentação."
+}
+
+REGRA CRÍTICA: Se o contato encontrado está na lista de 2º GRAU (tem connectorName), SEMPRE use matchType "bridge" e preencha o campo bridge com os dados do connector (ponte). O usuário precisa saber QUEM pode fazer a apresentação!
 
 Se encontrou via 2º GRAU (bridge):
 {
