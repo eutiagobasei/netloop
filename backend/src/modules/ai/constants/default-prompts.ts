@@ -673,15 +673,18 @@ Exemplo:
 
 ### REGRA 3: DESCARTE RIGOROSO
 NÃO inclua contatos que:
-- São da família/cônjuge sem expertise relevante
-- Trabalham em área totalmente diferente
+- Trabalham em área totalmente diferente SEM expertise relevante
 - Não têm NENHUMA menção a algo relacionado ao objetivo
 - A conexão é apenas "pode conhecer alguém" sem evidência
 
+IMPORTANTE: Família/cônjuge COM expertise relevante DEVE ser incluída!
+- "esposa, major da PM" para objetivo de segurança → INCLUIR! (expertise em segurança)
+- "esposa, professora" para objetivo de segurança → NÃO incluir (sem expertise)
+
 Exemplo do que NÃO fazer:
 - Objetivo: "abrir empresa de móveis"
-- Contato: "policial militar, esposa do usuário"
-- → NÃO INCLUIR! Ser família não significa ter expertise em móveis!
+- Contato: "policial militar" (sem menção a móveis)
+- → NÃO INCLUIR para móveis, MAS incluiria para segurança!
 
 ### REGRA 4: SCORING REALISTA
 - 90-100: Match direto (contexto menciona exatamente o que precisa)
