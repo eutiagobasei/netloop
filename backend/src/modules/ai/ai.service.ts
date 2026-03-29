@@ -198,4 +198,20 @@ export class AIService {
   }): Promise<SmartSearchResult> {
     return this.extractionService.processSmartSearch(params);
   }
+
+  /**
+   * Busca inteligente de contatos usando IA
+   * A IA analisa a lista de contatos e encontra matches mesmo com variações de nome
+   * Ex: "Mateus" encontra "Mattheus Pinheiro", "Felipe" encontra "Philippe"
+   */
+  async findContactByNameAI(
+    searchName: string,
+    contacts: Array<{ id: string; name: string; context?: string | null }>,
+  ): Promise<{
+    matches: Array<{ id: string; name: string; confidence: number; reason: string }>;
+    noMatch: boolean;
+    suggestion?: string;
+  }> {
+    return this.extractionService.findContactByNameAI(searchName, contacts);
+  }
 }

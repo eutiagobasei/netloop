@@ -323,6 +323,38 @@ export class ContactsService {
     };
   }
 
+  /**
+   * Busca todos os contatos do usuário com dados básicos (para busca IA)
+   * Retorna apenas id, name, context - otimizado para tokens
+   */
+  async findAllBasic(
+    ownerId: string,
+  ): Promise<
+    Array<{
+      id: string;
+      name: string;
+      phone: string | null;
+      email: string | null;
+      context: string | null;
+      professionalInfo: string | null;
+      relationshipContext: string | null;
+    }>
+  > {
+    return this.prisma.contact.findMany({
+      where: { ownerId },
+      select: {
+        id: true,
+        name: true,
+        phone: true,
+        email: true,
+        context: true,
+        professionalInfo: true,
+        relationshipContext: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   async findById(id: string, ownerId: string) {
     const contact = await this.prisma.contact.findUnique({
       where: { id },
@@ -344,7 +376,56 @@ export class ContactsService {
       throw new ForbiddenException('Sem permissão para acessar este contato');
     }
 
-    return this.formatContactResponse(contact);
+    // Check if contact is linked to a registered user (by phone)
+    const userClubs = await this.findUserClubsByPhone(contact.phone);
+
+    return {
+      ...this.formatContactResponse(contact),
+      userClubs,
+    };
+  }
+
+  /**
+   * Finds clubs for a user linked by phone number
+   * Returns empty array if no user found or user has no clubs
+   */
+  private async findUserClubsByPhone(phone: string | null): Promise<
+    Array<{
+      id: string;
+      name: string;
+      color: string | null;
+      isVerified: boolean;
+    }>
+  > {
+    if (!phone) return [];
+
+    // Normalize phone and get variations
+    const phoneVariations = PhoneUtil.getVariations(phone);
+    if (phoneVariations.length === 0) return [];
+
+    // Find user with matching phone
+    const user = await this.prisma.user.findFirst({
+      where: { phone: { in: phoneVariations } },
+      select: {
+        clubMemberships: {
+          where: { leftAt: null },
+          select: {
+            club: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+                isVerified: true,
+              },
+            },
+          },
+        },
+      },
+    });
+
+    if (!user) return [];
+
+    return user.clubMemberships.map((m) => m.club);
   }
 
   async update(id: string, ownerId: string, dto: UpdateContactDto) {
@@ -966,8 +1047,76 @@ export class ContactsService {
   }
 
   /**
+   * Gera variações fonéticas de um nome para busca flexível
+   * Ex: "Mateus" → ["Mateus", "Matheus", "Mattheus", "Matheos"]
+   */
+  private generateNameVariations(name: string): string[] {
+    const variations = new Set<string>();
+    const lowerName = name.toLowerCase();
+    variations.add(lowerName);
+
+    // Variações comuns em nomes brasileiros
+    const rules: Array<[RegExp, string, string]> = [
+      // th ↔ t
+      [/th/gi, 'th', 't'],
+      [/t(?=[aeiou])/gi, 't', 'th'],
+      // tt ↔ t
+      [/tt/gi, 'tt', 't'],
+      [/t(?=[aeiou])/gi, 't', 'tt'],
+      // ph ↔ f
+      [/ph/gi, 'ph', 'f'],
+      [/f/gi, 'f', 'ph'],
+      // y ↔ i
+      [/y/gi, 'y', 'i'],
+      [/i/gi, 'i', 'y'],
+      // w ↔ v
+      [/w/gi, 'w', 'v'],
+      [/v/gi, 'v', 'w'],
+      // ss ↔ ç ↔ c
+      [/ss/gi, 'ss', 'c'],
+      [/ç/gi, 'ç', 'ss'],
+      // ks ↔ x
+      [/x/gi, 'x', 'ks'],
+      [/ks/gi, 'ks', 'x'],
+      // z ↔ s
+      [/z/gi, 'z', 's'],
+      [/s(?=[aeiou])/gi, 's', 'z'],
+      // ll ↔ l
+      [/ll/gi, 'll', 'l'],
+      // nn ↔ n
+      [/nn/gi, 'nn', 'n'],
+      // ew ↔ eu
+      [/ew/gi, 'ew', 'eu'],
+      [/eu/gi, 'eu', 'ew'],
+    ];
+
+    // Aplica cada regra
+    for (const [pattern, from, to] of rules) {
+      if (pattern.test(lowerName)) {
+        variations.add(lowerName.replace(new RegExp(from, 'gi'), to));
+      }
+    }
+
+    // Combinações: aplica múltiplas regras
+    const firstPass = Array.from(variations);
+    for (const variant of firstPass) {
+      // th + tt
+      if (/th/i.test(variant)) {
+        variations.add(variant.replace(/th/gi, 't'));
+        variations.add(variant.replace(/th/gi, 'tth'));
+      }
+      if (/tth/i.test(variant)) {
+        variations.add(variant.replace(/tth/gi, 'th'));
+        variations.add(variant.replace(/tth/gi, 't'));
+      }
+    }
+
+    return Array.from(variations);
+  }
+
+  /**
    * Busca TODOS os contatos com nome similar (não apenas o primeiro)
-   * Usado para desambiguação quando múltiplos matches
+   * Usa busca inteligente com variações fonéticas de nomes brasileiros
    * PUBLIC: usado pelo WhatsappService para desambiguação em update_contact
    */
   async searchByNameSimilarMultiple(
@@ -984,7 +1133,14 @@ export class ContactsService {
       relationshipContext: string | null;
     }>
   > {
-    const results = await this.prisma.$queryRaw<
+    // Gera variações do nome para busca mais flexível
+    const nameVariations = this.generateNameVariations(searchName);
+    const normalizedSearch = this.normalizeString(searchName);
+
+    this.logger.log(`Busca "${searchName}" normalizado: "${normalizedSearch}", variações: ${nameVariations.slice(0, 5).join(', ')}`);
+
+    // Primeiro busca com pg_trgm similarity (threshold mais baixo para capturar mais variações)
+    const similarityResults = await this.prisma.$queryRaw<
       Array<{
         id: string;
         name: string;
@@ -997,18 +1153,56 @@ export class ContactsService {
     >`
       SELECT
         id, name, phone, email, "professionalInfo", "relationshipContext",
-        similarity(name, ${searchName}) as similarity
+        GREATEST(
+          similarity(name, ${searchName}),
+          similarity(LOWER(name), ${normalizedSearch})
+        ) as similarity
       FROM contacts
       WHERE "ownerId" = ${ownerId}
         AND (
-          similarity(name, ${searchName}) > 0.3
-          OR name ILIKE ${'%' + searchName + '%'}
+          similarity(name, ${searchName}) > 0.2
+          OR similarity(LOWER(name), ${normalizedSearch}) > 0.2
         )
-      ORDER BY similarity(name, ${searchName}) DESC
-      LIMIT ${limit}
+      ORDER BY similarity DESC
+      LIMIT ${limit * 2}
     `;
 
-    return results.map(({ similarity, ...rest }) => rest);
+    // Se não encontrou resultados suficientes, busca por variações ILIKE
+    if (similarityResults.length < limit) {
+      // Busca por cada variação usando ILIKE (seguro via Prisma)
+      const ilikeResults = await this.prisma.contact.findMany({
+        where: {
+          ownerId,
+          OR: nameVariations.map((variation) => ({
+            name: { contains: variation, mode: 'insensitive' as const },
+          })),
+        },
+        select: {
+          id: true,
+          name: true,
+          phone: true,
+          email: true,
+          professionalInfo: true,
+          relationshipContext: true,
+        },
+        take: limit,
+      });
+
+      // Combina resultados removendo duplicatas
+      const existingIds = new Set(similarityResults.map((r) => r.id));
+      for (const result of ilikeResults) {
+        if (!existingIds.has(result.id)) {
+          similarityResults.push({ ...result, similarity: 0.5 }); // Score intermediário
+        }
+      }
+    }
+
+    this.logger.log(`Encontrados ${similarityResults.length} contatos para "${searchName}"`);
+
+    // Retorna os melhores resultados limitados
+    return similarityResults
+      .slice(0, limit)
+      .map(({ similarity, ...rest }) => rest);
   }
 
   /**
@@ -1374,7 +1568,6 @@ export class ContactsService {
           data: {
             name: tagName.trim(),
             slug,
-            type: 'FREE',
             createdById: userId,
           },
         });
@@ -1435,7 +1628,7 @@ export class ContactsService {
     context: string | null;
     createdAt: Date;
     updatedAt: Date;
-    tags?: { tag: { id: string; name: string; color: string | null; type: string } }[];
+    tags?: { tag: { id: string; name: string; color: string | null } }[];
   }) {
     return {
       id: contact.id,
@@ -1451,7 +1644,6 @@ export class ContactsService {
         id: ct.tag.id,
         name: ct.tag.name,
         color: ct.tag.color,
-        type: ct.tag.type,
       })),
     };
   }

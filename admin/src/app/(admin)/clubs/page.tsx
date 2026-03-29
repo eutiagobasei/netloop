@@ -19,7 +19,6 @@ interface Club {
   createdAt: string
   _count?: {
     members: number
-    tags: number
   }
 }
 
@@ -357,9 +356,6 @@ export default function ClubsPage() {
                         Membros
                       </th>
                       <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
-                        Tags
-                      </th>
-                      <th className="px-6 py-4 text-left text-xs font-medium uppercase tracking-wider text-gray-400">
                         Criado em
                       </th>
                       <th className="px-6 py-4 text-right text-xs font-medium uppercase tracking-wider text-gray-400">
@@ -405,11 +401,6 @@ export default function ClubsPage() {
                         <td className="whitespace-nowrap px-6 py-4">
                           <span className="text-sm text-gray-300 bg-white/5 px-2 py-1 rounded">
                             {club._count?.members ?? 0}
-                          </span>
-                        </td>
-                        <td className="whitespace-nowrap px-6 py-4">
-                          <span className="text-sm text-gray-300 bg-white/5 px-2 py-1 rounded">
-                            {club._count?.tags ?? 0}
                           </span>
                         </td>
                         <td className="whitespace-nowrap px-6 py-4 text-sm text-gray-400">

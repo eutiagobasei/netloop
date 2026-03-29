@@ -6,11 +6,9 @@ import {
   Delete,
   Body,
   Param,
-  Query,
   UseGuards,
 } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth, ApiQuery } from '@nestjs/swagger';
-import { TagType } from '@prisma/client';
+import { ApiTags, ApiOperation, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { TagsService } from './tags.service';
 import { CreateTagDto } from './dto/create-tag.dto';
 import { UpdateTagDto } from './dto/update-tag.dto';
@@ -34,10 +32,9 @@ export class TagsController {
 
   @Get()
   @ApiOperation({ summary: 'Listar tags do usuário' })
-  @ApiQuery({ name: 'type', enum: TagType, required: false })
   @ApiResponse({ status: 200, description: 'Lista de tags' })
-  async findAll(@CurrentUser('id') userId: string, @Query('type') type?: TagType) {
-    return this.tagsService.findAll(userId, type);
+  async findAll(@CurrentUser('id') userId: string) {
+    return this.tagsService.findAll(userId);
   }
 
   @Get(':id')

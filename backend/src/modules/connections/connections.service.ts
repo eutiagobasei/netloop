@@ -3,7 +3,7 @@ import { PrismaService } from '@/prisma/prisma.service';
 import { ConnectionStrength } from '@prisma/client';
 import { CreateConnectionDto } from './dto/create-connection.dto';
 import { UpdateConnectionDto } from './dto/update-connection.dto';
-import { GraphData, GraphNode, GraphEdge } from './types/graph.types';
+import { GraphData, GraphNode, GraphEdge, ClubInfo } from './types/graph.types';
 import { PhoneUtil } from '@/common/utils/phone.util';
 import { EmbeddingService } from '../ai/services/embedding.service';
 
@@ -147,21 +147,42 @@ export class ConnectionsService {
     const edges: GraphEdge[] = [];
     const visitedIds = new Set<string>();
 
-    // Adiciona o usuário como nó central
+    // Adiciona o usuário como nó central (com seus clubes)
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
+      include: {
+        clubMemberships: {
+          where: { leftAt: null },
+          include: {
+            club: {
+              select: { id: true, name: true, color: true, isVerified: true },
+            },
+          },
+        },
+      },
     });
 
     if (!user) {
       throw new NotFoundException('Usuário não encontrado');
     }
 
+    const userClubs: ClubInfo[] = user.clubMemberships.map((m) => ({
+      id: m.club.id,
+      name: m.club.name,
+      color: m.club.color,
+      isVerified: m.club.isVerified,
+    }));
+
     nodes.push({
       id: userId,
       name: user.name,
       type: 'user',
       degree: 0,
+      clubs: userClubs,
     });
+
+    // Set para rastrear telefones de contatos de 1º grau (evita duplicatas com club_members)
+    const processedPhones = new Set<string>();
 
     // Busca conexões de 1º grau (contatos diretos do usuário)
     const firstDegreeConnections = await this.prisma.connection.findMany({
@@ -213,6 +234,48 @@ export class ConnectionsService {
         }
       }
     }
+
+    // === Club lookup for contacts ===
+    // Find users by phone and their clubs
+    const usersWithClubs =
+      allPhoneVariations.length > 0
+        ? await this.prisma.user.findMany({
+            where: { phone: { in: allPhoneVariations } },
+            select: {
+              phone: true,
+              clubMemberships: {
+                where: { leftAt: null },
+                select: {
+                  club: {
+                    select: { id: true, name: true, color: true, isVerified: true },
+                  },
+                },
+              },
+            },
+          })
+        : [];
+
+    // Build map: phone variation -> clubs[]
+    const phoneToClubsMap = new Map<string, ClubInfo[]>();
+    for (const u of usersWithClubs) {
+      if (!u.phone) continue;
+      const clubs = u.clubMemberships.map((m) => m.club);
+      const variations = PhoneUtil.getVariations(u.phone);
+      for (const v of variations) {
+        phoneToClubsMap.set(v, clubs);
+      }
+    }
+
+    // Helper to get clubs for a contact by phone
+    const getClubsForContact = (contactId: string): ClubInfo[] => {
+      const variations = contactPhoneMap.get(contactId) || [];
+      for (const v of variations) {
+        const clubs = phoneToClubsMap.get(v);
+        if (clubs && clubs.length > 0) return clubs;
+      }
+      return [];
+    };
+    // === End club lookup ===
 
     // Query contacts from OTHER users with matching phones
     const sharedContacts =
@@ -273,6 +336,12 @@ export class ConnectionsService {
         visitedIds.add(conn.contactId);
 
         const shared = getSharedInfo(conn.contactId);
+        const contactClubs = getClubsForContact(conn.contactId);
+
+        // Rastreia telefone do contato para evitar duplicata com club_member
+        if (conn.contact.phone) {
+          PhoneUtil.getVariations(conn.contact.phone).forEach((v) => processedPhones.add(v));
+        }
 
         nodes.push({
           id: conn.contactId,
@@ -284,6 +353,7 @@ export class ConnectionsService {
             name: ct.tag.name,
             color: ct.tag.color,
           })),
+          clubs: contactClubs,
           phone: conn.contact.phone,
           email: conn.contact.email,
           context: conn.context, // Contexto da CONEXÃO (como você conhece a pessoa)
@@ -394,6 +464,81 @@ export class ConnectionsService {
         }
       }
     }
+
+    // === Adiciona membros de clubes como conexões de 1º grau ===
+    // Para cada clube do usuário, busca outros membros ativos
+    for (const club of userClubs) {
+      // Busca membros do clube (exceto o próprio usuário)
+      const clubMembers = await this.prisma.clubMember.findMany({
+        where: {
+          clubId: club.id,
+          userId: { not: userId },
+          leftAt: null, // Apenas membros ativos
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              phone: true,
+              email: true,
+            },
+          },
+        },
+        take: 100, // Limita para não sobrecarregar o grafo
+      });
+
+      for (const member of clubMembers) {
+        // Pula se já existe como contato (baseado no telefone)
+        const memberPhoneVariations = PhoneUtil.getVariations(member.user.phone);
+        const alreadyContact = memberPhoneVariations.some((v) => processedPhones.has(v));
+
+        if (alreadyContact) {
+          continue; // Já é contato manual, não criar nó duplicado
+        }
+
+        // Cria ID único para este membro de clube
+        const clubMemberId = `club-${club.id}-${member.userId}`;
+
+        // Pula se já processado (pode ser membro de múltiplos clubes em comum)
+        if (visitedIds.has(clubMemberId) || visitedIds.has(member.userId)) {
+          continue;
+        }
+
+        visitedIds.add(clubMemberId);
+
+        // Adiciona telefone às variações processadas para evitar duplicatas
+        memberPhoneVariations.forEach((v) => processedPhones.add(v));
+
+        // Cria nó do membro
+        nodes.push({
+          id: clubMemberId,
+          name: member.user.name,
+          type: 'club_member',
+          degree: 1,
+          clubs: [
+            {
+              id: club.id,
+              name: club.name,
+              color: club.color,
+              isVerified: club.isVerified,
+            },
+          ],
+          phone: member.user.phone,
+          email: member.user.email,
+          // context vazio - a relação é definida pelo clube
+        });
+
+        // Cria edge com a cor do clube
+        edges.push({
+          source: userId,
+          target: clubMemberId,
+          strength: 'CLUB',
+          clubColor: club.color,
+        });
+      }
+    }
+    // === Fim membros de clubes ===
 
     return { nodes, edges };
   }

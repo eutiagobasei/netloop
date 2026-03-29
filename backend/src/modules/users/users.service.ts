@@ -18,6 +18,22 @@ export class UsersService {
         isActive: true,
         createdAt: true,
         updatedAt: true,
+        clubMemberships: {
+          where: { leftAt: null },
+          select: {
+            id: true,
+            isAdmin: true,
+            joinedAt: true,
+            club: {
+              select: {
+                id: true,
+                name: true,
+                color: true,
+                isVerified: true,
+              },
+            },
+          },
+        },
       },
     });
 
@@ -25,7 +41,18 @@ export class UsersService {
       throw new NotFoundException('Usuário não encontrado');
     }
 
-    return user;
+    // Format clubMemberships to flat clubs array
+    return {
+      ...user,
+      clubs: user.clubMemberships.map((membership) => ({
+        id: membership.club.id,
+        name: membership.club.name,
+        color: membership.club.color,
+        isVerified: membership.club.isVerified,
+        isAdmin: membership.isAdmin,
+        joinedAt: membership.joinedAt,
+      })),
+    };
   }
 
   async findByEmail(email: string) {

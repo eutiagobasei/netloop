@@ -16,15 +16,10 @@ enum UserRole {
   USER
 }
 
-enum TagType {
-  FREE           // Tags livres criadas por qualquer usuário
-  INSTITUTIONAL  // Tags de clubes/instituições (ex: SOMA)
-}
-
 enum ConnectionStrength {
-  WEAK      // Conhece superficialmente
-  MODERATE  // Conhece bem
-  STRONG    // Relacionamento próximo
+  WEAK // Conhece superficialmente
+  MODERATE // Conhece bem
+  STRONG // Relacionamento próximo
 }
 
 enum MessageType {
@@ -35,27 +30,27 @@ enum MessageType {
 }
 
 enum ApprovalStatus {
-  PENDING       // Aguardando processamento pela IA
-  AWAITING      // Aguardando aprovação do usuário
-  APPROVED      // Aprovado pelo usuário
-  REJECTED      // Rejeitado pelo usuário
+  PENDING // Aguardando processamento pela IA
+  AWAITING // Aguardando aprovação do usuário
+  APPROVED // Aprovado pelo usuário
+  REJECTED // Rejeitado pelo usuário
   AUTO_APPROVED // Auto-aprovado por timeout
 }
 
 enum SettingCategory {
-  AI          // Configurações de IA (OpenAI, Anthropic)
-  WHATSAPP    // Configurações de WhatsApp/Evolution
-  SYSTEM      // Configurações gerais do sistema
-  PROMPTS     // Prompts de IA (extração, classificação, etc)
+  AI // Configurações de IA (OpenAI, Anthropic)
+  WHATSAPP // Configurações de WhatsApp/Evolution
+  SYSTEM // Configurações gerais do sistema
+  PROMPTS // Prompts de IA (extração, classificação, etc)
 }
 
 enum RegistrationStep {
-  WELCOME_SENT    // Boas-vindas enviadas, aguardando nome
-  AWAITING_NAME   // Aguardando resposta com nome
-  AWAITING_EMAIL  // Aguardando resposta com email
-  CONVERSATION    // Conversa em andamento (IA coletando dados)
-  COMPLETED       // Cadastro finalizado
-  ABANDONED       // Usuário abandonou o fluxo
+  WELCOME_SENT // Boas-vindas enviadas, aguardando nome
+  AWAITING_NAME // Aguardando resposta com nome
+  AWAITING_EMAIL // Aguardando resposta com email
+  CONVERSATION // Conversa em andamento (IA coletando dados)
+  COMPLETED // Cadastro finalizado
+  ABANDONED // Usuário abandonou o fluxo
 }
 
 enum MediaType {
@@ -65,8 +60,8 @@ enum MediaType {
 }
 
 enum MembersVisibility {
-  HIDDEN   // Membros não veem contatos uns dos outros
-  VISIBLE  // Membros veem contatos uns dos outros
+  HIDDEN // Membros não veem contatos uns dos outros
+  VISIBLE // Membros veem contatos uns dos outros
 }
 
 // ============================================
@@ -74,26 +69,26 @@ enum MembersVisibility {
 // ============================================
 
 model User {
-  id           String    @id @default(uuid())
-  email        String    @unique
-  password     String
-  name         String
-  phone        String?   @unique
-  role         UserRole  @default(USER)
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  id        String   @id @default(uuid())
+  email     String   @unique
+  password  String
+  name      String
+  phone     String?  @unique
+  role      UserRole @default(USER)
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   // Relacionamentos
-  contacts           Contact[]
-  createdTags        Tag[]              @relation("TagCreator")
-  clubMemberships    ClubMember[]
-  refreshTokens      RefreshToken[]
-  sentConnections    Connection[]       @relation("ConnectionFrom")
-  receivedMessages   WhatsappMessage[]
-  updatedSettings    SystemSetting[]    @relation("SettingUpdater")
-  uploadedMedia      MediaUpload[]      @relation("MediaUploader")
-  contactInvites     ContactInvite[]    @relation("ContactInviter")
+  contacts         Contact[]
+  createdTags      Tag[]             @relation("TagCreator")
+  clubMemberships  ClubMember[]
+  refreshTokens    RefreshToken[]
+  sentConnections  Connection[]      @relation("ConnectionFrom")
+  receivedMessages WhatsappMessage[]
+  updatedSettings  SystemSetting[]   @relation("SettingUpdater")
+  uploadedMedia    MediaUpload[]     @relation("MediaUploader")
+  contactInvites   ContactInvite[]   @relation("ContactInviter")
 
   @@map("users")
 }
@@ -119,20 +114,20 @@ model RefreshToken {
 // ============================================
 
 model Contact {
-  id          String   @id @default(uuid())
-  ownerId     String
-  name        String
-  phone       String?
-  email       String?
-  location    String?
-  notes       String?  @db.Text  // Anotações livres do usuário
-  context     String?  @db.Text  // Contexto geral (mantido para compatibilidade)
-  professionalInfo    String?  @db.Text  // Cargo, empresa, especialidade
-  relationshipContext String?  @db.Text  // Como/onde se conheceram
-  rawTranscription String? @db.Text // Transcrição original do áudio
-  embedding   Unsupported("vector(1536)")? // Embedding para busca semântica
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id                  String                       @id @default(uuid())
+  ownerId             String
+  name                String
+  phone               String?
+  email               String?
+  location            String?
+  notes               String?                      @db.Text // Anotações livres do usuário
+  context             String?                      @db.Text // Contexto geral (mantido para compatibilidade)
+  professionalInfo    String?                      @db.Text // Cargo, empresa, especialidade
+  relationshipContext String?                      @db.Text // Como/onde se conheceram
+  rawTranscription    String?                      @db.Text // Transcrição original do áudio
+  embedding           Unsupported("vector(1536)")? // Embedding para busca semântica
+  createdAt           DateTime                     @default(now())
+  updatedAt           DateTime                     @updatedAt
 
   // Relacionamentos
   owner                User                  @relation(fields: [ownerId], references: [id], onDelete: Cascade)
@@ -151,15 +146,15 @@ model Contact {
 
 model MentionedConnection {
   id          String   @id @default(uuid())
-  contactId   String   // Contato principal que mencionou
-  name        String   // Nome da pessoa mencionada
-  description String?  @db.Text  // Contexto/descrição sobre a pessoa
+  contactId   String // Contato principal que mencionou
+  name        String // Nome da pessoa mencionada
+  description String?  @db.Text // Contexto/descrição sobre a pessoa
   tags        String[] // Tags associadas
-  phone       String?  // Telefone se mencionado
+  phone       String? // Telefone se mencionado
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  contact     Contact  @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  contact Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
 
   @@index([contactId])
   @@index([name])
@@ -173,22 +168,16 @@ model MentionedConnection {
 model Tag {
   id          String   @id @default(uuid())
   name        String
-  slug        String
-  type        TagType  @default(FREE)
+  slug        String   @unique
   color       String?  @default("#6366f1")
-  isVerified  Boolean  @default(false) // Herda do clube - tag verificada/oficial
-  clubId      String?  // Se for tag institucional, pertence a um clube
   createdById String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   // Relacionamentos
-  createdBy   User         @relation("TagCreator", fields: [createdById], references: [id])
-  club        Club?        @relation(fields: [clubId], references: [id], onDelete: Cascade)
-  contacts    ContactTag[]
+  createdBy User         @relation("TagCreator", fields: [createdById], references: [id])
+  contacts  ContactTag[]
 
-  @@unique([slug, clubId])
-  @@index([type])
   @@map("tags")
 }
 
@@ -219,15 +208,14 @@ model Club {
   slug              String            @unique
   description       String?
   isActive          Boolean           @default(true)
-  isVerified        Boolean           @default(false)     // Selo de clube verificado/oficial
+  isVerified        Boolean           @default(false) // Selo de clube verificado/oficial
   color             String?           @default("#6366f1") // Cor especial da tag do clube
-  membersVisibility MembersVisibility @default(HIDDEN)    // Visibilidade entre membros (v2)
+  membersVisibility MembersVisibility @default(HIDDEN) // Visibilidade entre membros (v2)
   createdAt         DateTime          @default(now())
   updatedAt         DateTime          @updatedAt
 
   // Relacionamentos
   members ClubMember[]
-  tags    Tag[]
   invites ClubInvite[]
   admins  ClubAdmin[]
 
@@ -239,15 +227,15 @@ model Club {
 // ============================================
 
 model ClubMember {
-  id        String   @id @default(uuid())
-  userId    String
-  clubId    String
-  isAdmin   Boolean  @default(false)
-  joinedAt  DateTime @default(now())
-  leftAt    DateTime?
+  id       String    @id @default(uuid())
+  userId   String
+  clubId   String
+  isAdmin  Boolean   @default(false)
+  joinedAt DateTime  @default(now())
+  leftAt   DateTime?
 
-  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
-  club  Club  @relation(fields: [clubId], references: [id], onDelete: Cascade)
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  club Club @relation(fields: [clubId], references: [id], onDelete: Cascade)
 
   @@unique([userId, clubId])
   @@map("club_members")
@@ -261,7 +249,7 @@ model ClubAdmin {
   id        String   @id @default(uuid())
   clubId    String
   email     String
-  password  String   // Hash bcrypt
+  password  String // Hash bcrypt
   name      String
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
@@ -279,14 +267,14 @@ model ClubAdmin {
 // ============================================
 
 model Connection {
-  id          String             @id @default(uuid())
-  fromUserId  String             // Usuário que criou a conexão
-  contactId   String             // Contato conectado
-  strength    ConnectionStrength @default(MODERATE)
-  context     String?            @db.Text  // Como se conheceram
-  embedding   Unsupported("vector(1536)")? // Embedding para busca semântica
-  createdAt   DateTime           @default(now())
-  updatedAt   DateTime           @updatedAt
+  id         String                       @id @default(uuid())
+  fromUserId String // Usuário que criou a conexão
+  contactId  String // Contato conectado
+  strength   ConnectionStrength           @default(MODERATE)
+  context    String?                      @db.Text // Como se conheceram
+  embedding  Unsupported("vector(1536)")? // Embedding para busca semântica
+  createdAt  DateTime                     @default(now())
+  updatedAt  DateTime                     @updatedAt
 
   fromUser User    @relation("ConnectionFrom", fields: [fromUserId], references: [id], onDelete: Cascade)
   contact  Contact @relation(fields: [contactId], references: [id], onDelete: Cascade)
@@ -302,22 +290,22 @@ model Connection {
 // ============================================
 
 model WhatsappMessage {
-  id              String         @id @default(uuid())
-  userId          String
-  externalId      String         @unique  // ID da mensagem no WhatsApp
-  fromPhone       String
-  type            MessageType
-  content         String?        @db.Text
-  audioUrl        String?
-  transcription   String?        @db.Text
-  extractedData   Json?          // Dados extraídos pela IA (nome, empresa, etc)
-  processed       Boolean        @default(false)
-  processedAt     DateTime?
-  approvalStatus  ApprovalStatus @default(PENDING)
-  approvalSentAt  DateTime?      // Quando o resumo foi enviado
-  approvedAt      DateTime?      // Quando foi aprovado/rejeitado
-  contactCreated  Boolean        @default(false)
-  createdAt       DateTime       @default(now())
+  id             String         @id @default(uuid())
+  userId         String
+  externalId     String         @unique // ID da mensagem no WhatsApp
+  fromPhone      String
+  type           MessageType
+  content        String?        @db.Text
+  audioUrl       String?
+  transcription  String?        @db.Text
+  extractedData  Json? // Dados extraídos pela IA (nome, empresa, etc)
+  processed      Boolean        @default(false)
+  processedAt    DateTime?
+  approvalStatus ApprovalStatus @default(PENDING)
+  approvalSentAt DateTime? // Quando o resumo foi enviado
+  approvedAt     DateTime? // Quando foi aprovado/rejeitado
+  contactCreated Boolean        @default(false)
+  createdAt      DateTime       @default(now())
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -342,7 +330,7 @@ model SystemSetting {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
-  updatedBy   User?           @relation("SettingUpdater", fields: [updatedById], references: [id])
+  updatedBy User? @relation("SettingUpdater", fields: [updatedById], references: [id])
 
   @@index([category])
   @@map("system_settings")
@@ -354,17 +342,17 @@ model SystemSetting {
 
 model UserRegistrationFlow {
   id                  String           @id @default(uuid())
-  phone               String           @unique  // Telefone do usuário em registro
+  phone               String           @unique // Telefone do usuário em registro
   step                RegistrationStep @default(WELCOME_SENT)
-  name                String?          // Nome coletado
-  email               String?          // Email coletado
-  conversationHistory Json?            // Histórico da conversa [{role, content}]
-  extractedData       Json?            // Dados extraídos pela IA {name?, email?}
+  name                String? // Nome coletado
+  email               String? // Email coletado
+  conversationHistory Json? // Histórico da conversa [{role, content}]
+  extractedData       Json? // Dados extraídos pela IA {name?, email?}
   attemptsCount       Int              @default(0) // Contador de tentativas
   lastMessageAt       DateTime         @default(now())
   createdAt           DateTime         @default(now())
   updatedAt           DateTime         @updatedAt
-  expiresAt           DateTime         // Expira após 24h sem interação
+  expiresAt           DateTime // Expira após 24h sem interação
 
   @@index([phone])
   @@index([step])
@@ -377,16 +365,16 @@ model UserRegistrationFlow {
 
 model MediaUpload {
   id           String    @id @default(uuid())
-  filename     String    // Nome original do arquivo
-  path         String    // Caminho no storage
-  mimeType     String    // audio/mpeg, video/mp4, etc
-  size         Int       // Tamanho em bytes
+  filename     String // Nome original do arquivo
+  path         String // Caminho no storage
+  mimeType     String // audio/mpeg, video/mp4, etc
+  size         Int // Tamanho em bytes
   type         MediaType
-  settingKey   String?   // Chave da setting associada (ex: welcome_audio)
+  settingKey   String? // Chave da setting associada (ex: welcome_audio)
   uploadedById String?
   createdAt    DateTime  @default(now())
 
-  uploadedBy   User?     @relation("MediaUploader", fields: [uploadedById], references: [id])
+  uploadedBy User? @relation("MediaUploader", fields: [uploadedById], references: [id])
 
   @@map("media_uploads")
 }
@@ -396,18 +384,18 @@ model MediaUpload {
 // ============================================
 
 enum InviteStatus {
-  PENDING       // Aguardando envio de convite
-  NOTIFIED      // Notificação enviada, aguardando cadastro
-  INVITED       // Convite enviado via WhatsApp (legacy)
-  ACCEPTED      // Usuário se cadastrou
-  REJECTED      // Usuário recusou
+  PENDING // Aguardando envio de convite
+  NOTIFIED // Notificação enviada, aguardando cadastro
+  INVITED // Convite enviado via WhatsApp (legacy)
+  ACCEPTED // Usuário se cadastrou
+  REJECTED // Usuário recusou
 }
 
 enum ContactInviteStatus {
-  PENDING     // Aguardando envio
-  NOTIFIED    // Notificação enviada
-  REGISTERED  // Usuário se cadastrou
-  BLOCKED     // Bloqueado (opt-out ou limite atingido)
+  PENDING // Aguardando envio
+  NOTIFIED // Notificação enviada
+  REGISTERED // Usuário se cadastrou
+  BLOCKED // Bloqueado (opt-out ou limite atingido)
 }
 
 model ClubInvite {
@@ -415,7 +403,7 @@ model ClubInvite {
   clubId             String
   name               String
   phone              String
-  email              String?      // Email do convidado
+  email              String? // Email do convidado
   company            String?
   companyDescription String?
   status             InviteStatus @default(PENDING)
@@ -434,14 +422,14 @@ model ClubInvite {
 
 model ContactInvite {
   id           String              @id @default(uuid())
-  phone        String              @unique  // Telefone do convidado
-  inviterId    String              // Quem convidou primeiro
-  inviterName  String              // Nome de quem convidou (para a mensagem)
-  contactName  String?             // Nome do contato (se disponível)
+  phone        String              @unique // Telefone do convidado
+  inviterId    String // Quem convidou primeiro
+  inviterName  String // Nome de quem convidou (para a mensagem)
+  contactName  String? // Nome do contato (se disponível)
   status       ContactInviteStatus @default(PENDING)
   notifiedAt   DateTime?
   registeredAt DateTime?
-  inviteCount  Int                 @default(1)  // Quantas vezes foi convidado
+  inviteCount  Int                 @default(1) // Quantas vezes foi convidado
   createdAt    DateTime            @default(now())
   updatedAt    DateTime            @updatedAt
 

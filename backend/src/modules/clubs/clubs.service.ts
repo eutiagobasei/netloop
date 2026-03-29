@@ -6,7 +6,6 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '@/prisma/prisma.service';
-import { TagType } from '@prisma/client';
 import {
   CreateClubDto,
   UpdateClubDto,
@@ -16,7 +15,6 @@ import {
   ImportInvitesDto,
   ImportInvitesResponseDto,
 } from './dto';
-import { TagsService } from '../tags/tags.service';
 import { WhatsappService } from '../whatsapp/whatsapp.service';
 import { SlugUtil } from '@/common/utils/slug.util';
 
@@ -26,12 +24,11 @@ export class ClubsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly tagsService: TagsService,
     private readonly whatsappService: WhatsappService,
   ) {}
 
   /**
-   * Cria um novo clube com sua tag institucional
+   * Cria um novo clube
    */
   async create(adminUserId: string, dto: CreateClubDto) {
     const slug = SlugUtil.generate(dto.name);
@@ -65,19 +62,6 @@ export class ClubsService {
         },
       });
 
-      // Cria a tag institucional do clube
-      await tx.tag.create({
-        data: {
-          name: dto.name,
-          slug,
-          type: TagType.INSTITUTIONAL,
-          color: dto.color || '#6366f1',
-          isVerified: dto.isVerified ?? false,
-          clubId: newClub.id,
-          createdById: adminUserId,
-        },
-      });
-
       return newClub;
     });
 
@@ -95,10 +79,6 @@ export class ClubsService {
       include: {
         _count: {
           select: { members: { where: { leftAt: null } } },
-        },
-        tags: {
-          where: { type: TagType.INSTITUTIONAL },
-          select: { id: true, name: true, color: true, isVerified: true },
         },
       },
       orderBy: { name: 'asc' },
@@ -121,10 +101,6 @@ export class ClubsService {
             },
           },
           orderBy: { joinedAt: 'asc' },
-        },
-        tags: {
-          where: { type: TagType.INSTITUTIONAL },
-          select: { id: true, name: true, color: true, isVerified: true },
         },
         _count: {
           select: { members: { where: { leftAt: null } } },
@@ -149,7 +125,6 @@ export class ClubsService {
           isVerified: club.isVerified,
           color: club.color,
           isActive: club.isActive,
-          tags: club.tags,
           _count: club._count,
           members: [], // Não expõe membros para não-membros
         };
@@ -169,29 +144,9 @@ export class ClubsService {
 
     const data: Partial<UpdateClubDto> & { slug?: string } = { ...dto };
 
-    // Se mudar o nome, atualiza também o slug e a tag
+    // Se mudar o nome, atualiza também o slug
     if (dto.name && dto.name !== club.name) {
       data.slug = SlugUtil.generate(dto.name);
-
-      // Atualiza a tag institucional
-      await this.prisma.tag.updateMany({
-        where: { clubId: id, type: TagType.INSTITUTIONAL },
-        data: {
-          name: dto.name,
-          slug: data.slug,
-          ...(dto.color && { color: dto.color }),
-          ...(dto.isVerified !== undefined && { isVerified: dto.isVerified }),
-        },
-      });
-    } else if (dto.color || dto.isVerified !== undefined) {
-      // Atualiza apenas cor/verificado da tag
-      await this.prisma.tag.updateMany({
-        where: { clubId: id, type: TagType.INSTITUTIONAL },
-        data: {
-          ...(dto.color && { color: dto.color }),
-          ...(dto.isVerified !== undefined && { isVerified: dto.isVerified }),
-        },
-      });
     }
 
     await this.prisma.club.update({
@@ -203,7 +158,7 @@ export class ClubsService {
   }
 
   /**
-   * Adiciona um membro ao clube e aplica a tag institucional em todos os contatos dele
+   * Adiciona um membro ao clube
    */
   async addMember(clubId: string, adminUserId: string, dto: AddMemberDto) {
     await this.ensureAdmin(clubId, adminUserId);
@@ -247,16 +202,6 @@ export class ClubsService {
           isAdmin: dto.isAdmin ?? false,
         },
       });
-    }
-
-    // Busca a tag institucional do clube
-    const clubTag = await this.prisma.tag.findFirst({
-      where: { clubId, type: TagType.INSTITUTIONAL },
-    });
-
-    if (clubTag) {
-      // Aplica a tag em todos os contatos do novo membro
-      await this.tagsService.applyTagToAllUserContacts(dto.userId, clubTag.id);
     }
 
     this.logger.log(`Membro ${user.name} adicionado ao clube ${club.name}`);
@@ -340,7 +285,7 @@ export class ClubsService {
   }
 
   /**
-   * Remove um membro do clube, remove a tag dos contatos e envia notificação de escassez
+   * Remove um membro do clube
    */
   async removeMember(clubId: string, adminUserId: string, userId: string) {
     await this.ensureAdmin(clubId, adminUserId);
@@ -371,59 +316,16 @@ export class ClubsService {
       select: { id: true, name: true, phone: true },
     });
 
-    // Busca a tag institucional do clube
-    const clubTag = await this.prisma.tag.findFirst({
-      where: { clubId, type: TagType.INSTITUTIONAL },
+    // Marca o membro como saído
+    await this.prisma.clubMember.update({
+      where: { id: membership.id },
+      data: { leftAt: new Date() },
     });
 
-    let lostConnectionsCount = 0;
-
-    // Executa remoção em uma transação para garantir consistência
-    await this.prisma.$transaction(async (tx) => {
-      if (clubTag) {
-        // Conta quantos contatos do usuário têm essa tag
-        lostConnectionsCount = await tx.contactTag.count({
-          where: {
-            tagId: clubTag.id,
-            contact: { ownerId: userId },
-          },
-        });
-
-        // Remove a tag de todos os contatos do membro
-        await tx.contactTag.deleteMany({
-          where: {
-            tagId: clubTag.id,
-            contact: { ownerId: userId },
-          },
-        });
-      }
-
-      // Marca o membro como saído
-      await tx.clubMember.update({
-        where: { id: membership.id },
-        data: { leftAt: new Date() },
-      });
-    });
-
-    this.logger.log(
-      `Membro ${user?.name} removido do clube ${club.name}. Perdeu ${lostConnectionsCount} conexões.`,
-    );
-
-    // Envia notificação de escassez via WhatsApp (fora da transação)
-    if (user?.phone && lostConnectionsCount > 0) {
-      // Executa de forma assíncrona para não bloquear a resposta
-      this.whatsappService
-        .sendScarcityNotification(user.phone, club.name, lostConnectionsCount)
-        .catch((err) => {
-          this.logger.error(`Erro ao enviar notificação de escassez: ${err.message}`);
-        });
-    }
+    this.logger.log(`Membro ${user?.name} removido do clube ${club.name}`);
 
     return {
       message: `${user?.name || 'Membro'} removido do clube ${club.name}`,
-      lostConnectionsCount,
-      userPhone: user?.phone,
-      clubName: club.name,
     };
   }
 
@@ -469,7 +371,7 @@ export class ClubsService {
         tags: {
           include: {
             tag: {
-              select: { id: true, name: true, color: true, type: true, isVerified: true },
+              select: { id: true, name: true, color: true },
             },
           },
         },

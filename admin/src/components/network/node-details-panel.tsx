@@ -1,7 +1,8 @@
 'use client'
 
-import { X, Building2, Briefcase, Tag, Users, FileText, Phone, Mail, MapPin } from 'lucide-react'
+import { X, Building2, Briefcase, Tag, Users, FileText, Phone, Mail, MapPin, Shield, MessageCircle } from 'lucide-react'
 import { GraphNode } from '@/lib/api'
+import { ClubBadgeList } from '@/components/ui/club-badge'
 
 interface NodeDetailsPanelProps {
   node: GraphNode | null
@@ -12,6 +13,13 @@ const DEGREE_LABELS = {
   0: 'Voce',
   1: '1o Nivel - Conexao Direta',
   2: '2o Nivel - Conexao Indireta',
+}
+
+// Formata telefone para link do WhatsApp
+function formatWhatsAppLink(phone: string): string {
+  // Remove tudo que não é número
+  const cleaned = phone.replace(/\D/g, '')
+  return `https://wa.me/${cleaned}`
 }
 
 const DEGREE_COLORS = {
@@ -144,6 +152,18 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
           </div>
         )}
 
+        {node.clubs && node.clubs.length > 0 && (
+          <div className="flex items-start gap-2">
+            <Shield className="h-4 w-4 mt-0.5 text-gray-500" />
+            <div>
+              <p className="text-sm font-medium text-gray-400">Clubes</p>
+              <div className="mt-1">
+                <ClubBadgeList clubs={node.clubs} size="md" />
+              </div>
+            </div>
+          </div>
+        )}
+
         {node.isShared && node.sharedByUsers && node.sharedByUsers.length > 0 && (
           <div className="mt-4 rounded-lg bg-amber-500/10 border border-amber-500/20 p-3">
             <div className="flex items-center gap-2 mb-2">
@@ -170,6 +190,52 @@ export function NodeDetailsPanel({ node, onClose }: NodeDetailsPanelProps) {
             <p className="text-sm text-gray-300">
               Esta pessoa foi mencionada por um dos seus contatos diretos.
             </p>
+          </div>
+        )}
+
+        {node.type === 'club_member' && node.clubs && node.clubs.length > 0 && (
+          <div className="mt-4 space-y-3">
+            <div
+              className="rounded-lg p-3 border"
+              style={{
+                backgroundColor: `${node.clubs[0].color || '#a855f7'}15`,
+                borderColor: `${node.clubs[0].color || '#a855f7'}40`,
+              }}
+            >
+              <div className="flex items-center gap-2 mb-2">
+                <Shield
+                  className="h-4 w-4"
+                  style={{ color: node.clubs[0].color || '#a855f7' }}
+                />
+                <p
+                  className="text-sm font-semibold"
+                  style={{ color: node.clubs[0].color || '#a855f7' }}
+                >
+                  Voces sao do mesmo clube!
+                </p>
+              </div>
+              <p className="text-sm text-gray-300">
+                Voce pode entrar em contato mencionando que fazem parte do{' '}
+                <span className="font-medium" style={{ color: node.clubs[0].color || '#a855f7' }}>
+                  {node.clubs[0].name}
+                </span>
+              </p>
+            </div>
+
+            {node.phone && (
+              <a
+                href={formatWhatsAppLink(node.phone)}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 w-full rounded-lg py-2.5 px-4 font-medium text-white transition-colors hover:opacity-90"
+                style={{
+                  backgroundColor: node.clubs[0].color || '#22c55e',
+                }}
+              >
+                <MessageCircle className="h-4 w-4" />
+                Enviar mensagem
+              </a>
+            )}
           </div>
         )}
       </div>

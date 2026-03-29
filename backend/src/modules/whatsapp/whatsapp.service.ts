@@ -1228,36 +1228,62 @@ export class WhatsappService {
         return;
       }
 
-      // 3. SE FOR UPDATE_CONTACT → FLUXO DE ATUALIZAÇÃO (com desambiguação)
+      // 3. SE FOR UPDATE_CONTACT → FLUXO DE ATUALIZAÇÃO (com IA para busca inteligente)
       if (intent === 'update_contact') {
         const contactName = await this.aiService.extractQuerySubject(transcription);
 
         if (contactName) {
-          // Buscar TODOS os contatos similares (não apenas o primeiro)
-          const matches = await this.contactsService.searchByNameSimilarMultiple(
-            message.userId,
+          // Busca todos os contatos do usuário para a IA analisar
+          const allContacts = await this.contactsService.findAllBasic(message.userId);
+
+          // Usa IA para encontrar contatos com variações de nome
+          const aiResult = await this.aiService.findContactByNameAI(
             contactName,
-            5,
+            allContacts.map((c) => ({ id: c.id, name: c.name, context: c.context })),
           );
 
-          if (matches.length === 0) {
-            // Não encontrou nenhum contato
-            await this.sendTextMessage(
-              fromPhone,
-              `🤔 Não encontrei *${contactName}* na sua rede.\n\nQual contato você quer atualizar?`,
-            );
-          } else if (matches.length === 1) {
-            // Match único - continua fluxo normal
+          if (aiResult.noMatch || aiResult.matches.length === 0) {
+            // Não encontrou nenhum contato - IA pode sugerir
+            const suggestion = aiResult.suggestion
+              ? `\n\n${aiResult.suggestion}`
+              : '\n\nQual contato você quer atualizar?';
+            await this.sendTextMessage(fromPhone, `🤔 Não encontrei *${contactName}* na sua rede.${suggestion}`);
+          } else if (aiResult.matches.length === 1 && aiResult.matches[0].confidence >= 0.8) {
+            // Match único com alta confiança - continua fluxo normal
             const existingContact = await this.contactsService.findById(
-              matches[0].id,
+              aiResult.matches[0].id,
               message.userId,
             );
-            this.setPendingUpdate(fromPhone, existingContact.id, existingContact.name);
-            await this.sendUpdatePrompt(fromPhone, existingContact);
+            if (existingContact) {
+              this.setPendingUpdate(fromPhone, existingContact.id, existingContact.name);
+              await this.sendUpdatePrompt(fromPhone, existingContact);
+            }
           } else {
-            // Múltiplos matches - desambiguação
-            this.setPendingContactDisambiguation(fromPhone, matches, 'update');
-            await this.sendContactDisambiguationMessage(fromPhone, matches, 'update');
+            // Múltiplos matches ou baixa confiança - desambiguação
+            const matchesForDisambiguation = aiResult.matches
+              .filter((match: { id: string; name: string; confidence: number }) => match.confidence >= 0.5)
+              .slice(0, 5)
+              .map((match: { id: string; name: string; confidence: number }) => {
+                const contact = allContacts.find((c) => c.id === match.id);
+                return {
+                  id: match.id,
+                  name: match.name,
+                  phone: contact?.phone || null,
+                  email: contact?.email || null,
+                  professionalInfo: contact?.professionalInfo || null,
+                  relationshipContext: contact?.relationshipContext || null,
+                };
+              });
+
+            if (matchesForDisambiguation.length > 0) {
+              this.setPendingContactDisambiguation(fromPhone, matchesForDisambiguation, 'update');
+              await this.sendContactDisambiguationMessage(fromPhone, matchesForDisambiguation, 'update');
+            } else {
+              await this.sendTextMessage(
+                fromPhone,
+                `🤔 Não encontrei *${contactName}* na sua rede.\n\nQual contato você quer atualizar?`,
+              );
+            }
           }
         } else {
           // Não conseguiu extrair o nome
@@ -1288,34 +1314,17 @@ export class WhatsappService {
       if (intent === 'loop_strategy') {
         this.logger.log(`[Loop] Processando estratégia para ${message.userId}`);
 
-        // Verificar se tem contatos suficientes
-        const contactCount = await this.contactsService.countUserContacts(message.userId);
-
-        if (contactCount < 3) {
-          await this.sendTextMessage(
-            fromPhone,
-            '📊 Para criar um plano estratégico, preciso conhecer melhor sua rede.\n\n' +
-              'Você tem poucos contatos cadastrados. Que tal começar adicionando alguns?\n\n' +
-              '💡 Envie: *Nome, telefone e contexto* de pessoas que você conhece.\n\n' +
-              'Exemplo: "João Silva, 11999998888, investidor anjo da área de tech"',
-          );
-
-          await this.prisma.whatsappMessage.update({
-            where: { id: messageId },
-            data: { transcription, processed: true, processedAt: new Date(), approvalStatus: 'APPROVED' },
-          });
-          return;
-        }
-
-        // Gerar plano via Loop
+        // Gerar plano via Loop (o Loop analisa os contatos existentes, mesmo que poucos)
         const plan = await this.loopService.generatePlan(message.userId, transcription);
 
         // Formatar e enviar plano
         const response = this.formatLoopPlanForWhatsApp(plan);
         await this.sendTextMessage(fromPhone, response);
 
-        // Enviar vCards dos top 5 contatos do plano
-        await this.sendLoopPlanContacts(fromPhone, plan, message.userId);
+        // Enviar vCards dos top 5 contatos do plano (se houver)
+        if (plan.actionPlan.length > 0) {
+          await this.sendLoopPlanContacts(fromPhone, plan, message.userId);
+        }
 
         await this.prisma.whatsappMessage.update({
           where: { id: messageId },
@@ -1460,6 +1469,48 @@ export class WhatsappService {
     let message = `🎯 *Plano Estratégico de Networking*\n\n`;
     message += `*Seu objetivo:* ${plan.goal}\n\n`;
 
+    // Caso especial: rede vazia
+    if (plan.totalContacts === 0) {
+      message += `📊 Analisei sua rede e você ainda não tem contatos cadastrados.\n\n`;
+      message += `💡 *Para criar um plano estratégico, preciso conhecer sua rede!*\n\n`;
+      message += `Envie informações de pessoas que você conhece:\n`;
+      message += `• Nome, telefone e contexto\n`;
+      message += `• Exemplo: "João Silva, 11999998888, investidor anjo da área de tech"\n\n`;
+      message += `Quanto mais contatos você adicionar, mais estratégico será o plano! 🚀`;
+      return message;
+    }
+
+    // Caso especial: rede pequena (1-2 contatos) sem ações
+    if (plan.actionPlan.length === 0 && plan.totalContacts > 0) {
+      message += `📊 Analisei sua rede (${plan.totalContacts} ${plan.totalContacts === 1 ? 'contato' : 'contatos'}).\n\n`;
+
+      // Mostra necessidades identificadas
+      if (plan.decomposedNeeds.length > 0) {
+        message += `💡 *Para esse objetivo, você vai precisar de:*\n`;
+        plan.decomposedNeeds.forEach((need, i) => {
+          message += `${i + 1}. ${need}\n`;
+        });
+        message += `\n`;
+      }
+
+      // Mostra os gaps
+      if (plan.gaps.length > 0) {
+        message += `⚠️ *Sua rede atual não tem conexões diretas para isso, mas você pode:*\n\n`;
+        plan.gaps.forEach((gap) => {
+          message += `• *${gap.need}:* ${gap.description}\n`;
+        });
+        message += `\n`;
+      }
+
+      message += `💪 *Próximos passos:*\n`;
+      message += `1. Pense em pessoas que você conhece nessas áreas\n`;
+      message += `2. Me envie os contatos deles (nome, telefone, contexto)\n`;
+      message += `3. Depois faço um plano mais completo!\n\n`;
+      message += `_Dica: Quanto mais contatos relevantes, melhor será o plano estratégico!_ 🚀`;
+      return message;
+    }
+
+    // Fluxo normal: tem ações no plano
     // Necessidades decompostas
     if (plan.decomposedNeeds.length > 0) {
       message += `💡 *O que você vai precisar:*\n`;
@@ -1494,7 +1545,11 @@ export class WhatsappService {
     }
 
     message += `📊 _Analisados ${plan.contactsAnalyzed} de ${plan.totalContacts} contatos_\n\n`;
-    message += `👇 Enviando os contatos em seguida...`;
+
+    // Só mostra "enviando contatos" se tiver contatos para enviar
+    if (topActions.length > 0) {
+      message += `👇 Enviando os contatos em seguida...`;
+    }
 
     return message;
   }
@@ -2299,7 +2354,6 @@ export class WhatsappService {
             data: {
               name: tagName,
               slug,
-              type: 'FREE',
               createdById: userId,
             },
           });

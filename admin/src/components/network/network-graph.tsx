@@ -48,12 +48,14 @@ const EDGE_COLORS = {
   STRONG: '#22c55e',
   MODERATE: '#3b82f6',
   WEAK: '#4b5563',
+  CLUB: '#a855f7', // Fallback roxo para conexões de clube
 }
 
 const EDGE_WIDTHS = {
   STRONG: 3,
   MODERATE: 2,
   WEAK: 1,
+  CLUB: 2,
 }
 
 export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraphProps) {
@@ -97,6 +99,7 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
       source: edge.source,
       target: edge.target,
       strength: edge.strength,
+      clubColor: edge.clubColor,
     })),
   }), [data.nodes, data.edges])
 
@@ -122,8 +125,16 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
 
       const degree = node.degree as number
       const nodeType = node.type as string
-      const color = NODE_COLORS[degree as keyof typeof NODE_COLORS] || '#6366f1'
-      const glowColor = NODE_GLOW_COLORS[degree as keyof typeof NODE_GLOW_COLORS] || 'rgba(99, 102, 241, 0.2)'
+      const hasClubs = node.clubs && node.clubs.length > 0
+
+      // Para club_member, usa a cor do clube como cor principal do nó
+      const isClubMember = nodeType === 'club_member'
+      const clubColor = hasClubs ? node.clubs![0].color : null
+      const baseColor = isClubMember && clubColor ? clubColor : (NODE_COLORS[degree as keyof typeof NODE_COLORS] || '#6366f1')
+      const color = baseColor
+      const glowColor = isClubMember && clubColor
+        ? `${clubColor}40`
+        : (NODE_GLOW_COLORS[degree as keyof typeof NODE_GLOW_COLORS] || 'rgba(99, 102, 241, 0.2)')
       const size = NODE_SIZES[degree as keyof typeof NODE_SIZES] || 10
       const isSelected = node.id === selectedNodeId
       const isHovered = node.id === hoveredNodeId
@@ -200,6 +211,65 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
         }
       }
 
+      // Indicador de membro de clube (anel colorido com escudo)
+      // Para club_member, sempre mostra o anel pois é a conexão principal
+      if (hasClubs && !node.isShared) {
+        // Usa a cor do primeiro clube
+        const clubColor = node.clubs![0].color || '#a855f7'
+
+        // Glow do anel
+        ctx.beginPath()
+        ctx.arc(node.x, node.y, size / 2 + 5, 0, 2 * Math.PI, false)
+        ctx.strokeStyle = `${clubColor}50`
+        ctx.lineWidth = 5
+        ctx.stroke()
+
+        // Anel principal com a cor do clube
+        ctx.beginPath()
+        ctx.arc(node.x, node.y, size / 2 + 3, 0, 2 * Math.PI, false)
+        ctx.strokeStyle = clubColor
+        ctx.lineWidth = 2
+        ctx.stroke()
+
+        // Badge de escudo no canto superior direito
+        const badgeX = node.x + size / 2
+        const badgeY = node.y - size / 2
+
+        // Fundo do badge
+        ctx.beginPath()
+        ctx.arc(badgeX, badgeY, 7, 0, 2 * Math.PI, false)
+        ctx.fillStyle = clubColor
+        ctx.fill()
+
+        // Borda do badge
+        ctx.strokeStyle = lightenColor(clubColor, 30)
+        ctx.lineWidth = 1
+        ctx.stroke()
+
+        // Escudo simples (shield icon)
+        ctx.fillStyle = '#FFFFFF'
+        ctx.beginPath()
+        ctx.moveTo(badgeX, badgeY - 3.5)
+        ctx.lineTo(badgeX + 3, badgeY - 1.5)
+        ctx.lineTo(badgeX + 3, badgeY + 1)
+        ctx.quadraticCurveTo(badgeX + 3, badgeY + 3.5, badgeX, badgeY + 4.5)
+        ctx.quadraticCurveTo(badgeX - 3, badgeY + 3.5, badgeX - 3, badgeY + 1)
+        ctx.lineTo(badgeX - 3, badgeY - 1.5)
+        ctx.closePath()
+        ctx.fill()
+
+        // Se tiver verificado, adiciona checkmark
+        if (node.clubs![0].isVerified) {
+          ctx.strokeStyle = clubColor
+          ctx.lineWidth = 1.2
+          ctx.beginPath()
+          ctx.moveTo(badgeX - 1.5, badgeY + 0.5)
+          ctx.lineTo(badgeX - 0.3, badgeY + 1.8)
+          ctx.lineTo(badgeX + 1.8, badgeY - 1)
+          ctx.stroke()
+        }
+      }
+
       // Highlight quando hover ou selecionado
       if (isSelected || isHovered) {
         ctx.beginPath()
@@ -209,8 +279,8 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
         ctx.stroke()
       }
 
-      // Label
-      if (degree === 0 || (degree === 1 && nodeType !== 'mentioned') || isHovered) {
+      // Label - mostra para nó central, contatos de 1º grau, club_members, ou quando hover
+      if (degree === 0 || (degree === 1 && (nodeType === 'contact' || nodeType === 'club_member')) || isHovered) {
         const label = degree === 0 ? 'Você' : node.name
         const fontSize = Math.max(11 / globalScale, 4)
 
@@ -240,7 +310,8 @@ export function NetworkGraph({ data, onNodeClick, selectedNodeId }: NetworkGraph
       }
 
       const strength = link.strength as keyof typeof EDGE_COLORS
-      const color = EDGE_COLORS[strength] || EDGE_COLORS.MODERATE
+      // Usa cor do clube se disponível, senão usa cor padrão da força
+      const color = link.clubColor || EDGE_COLORS[strength] || EDGE_COLORS.MODERATE
       const width = EDGE_WIDTHS[strength] || EDGE_WIDTHS.MODERATE
 
       // Linha com gradiente de opacidade

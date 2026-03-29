@@ -4,12 +4,10 @@ import { ConfigService } from '@nestjs/config';
 import { ClubsController } from './clubs.controller';
 import { ClubsService } from './clubs.service';
 import { ClubAuthService } from './club-auth.service';
-import { TagsModule } from '../tags/tags.module';
 import { WhatsappModule } from '../whatsapp/whatsapp.module';
 
 @Module({
   imports: [
-    TagsModule,
     WhatsappModule,
     JwtModule.registerAsync({
       inject: [ConfigService],

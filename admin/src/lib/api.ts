@@ -95,13 +95,22 @@ export const authApi = {
   me: () => api.get<AuthResponse['user']>('/auth/me'),
 }
 
+// Club info type
+export interface ClubInfo {
+  id: string
+  name: string
+  color: string | null
+  isVerified: boolean
+}
+
 // Connections / Graph Types
 export interface GraphNode {
   id: string
   name: string
-  type: 'user' | 'contact' | 'mentioned'
+  type: 'user' | 'contact' | 'mentioned' | 'club_member'
   degree: number
   tags?: { id: string; name: string; color: string | null }[]
+  clubs?: ClubInfo[]
   company?: string | null
   position?: string | null
   description?: string | null
@@ -117,7 +126,8 @@ export interface GraphNode {
 export interface GraphEdge {
   source: string
   target: string
-  strength: 'WEAK' | 'MODERATE' | 'STRONG'
+  strength: 'WEAK' | 'MODERATE' | 'STRONG' | 'CLUB'
+  clubColor?: string | null
 }
 
 export interface GraphData {

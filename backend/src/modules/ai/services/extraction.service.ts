@@ -1113,4 +1113,120 @@ Responda APENAS com: confirm, reject ou other`;
       return 'other';
     }
   }
+
+  /**
+   * Busca inteligente de contatos usando IA
+   * A IA analisa a lista de contatos e encontra matches mesmo com variações de nome
+   * Ex: "Mateus" encontra "Mattheus Pinheiro", "Felipe" encontra "Philippe"
+   */
+  async findContactByNameAI(
+    searchName: string,
+    contacts: Array<{ id: string; name: string; context?: string | null }>,
+  ): Promise<{
+    matches: Array<{ id: string; name: string; confidence: number; reason: string }>;
+    noMatch: boolean;
+    suggestion?: string;
+  }> {
+    this.logger.log(`[AI Search] Buscando "${searchName}" em ${contacts.length} contatos`);
+
+    // Se não tem contatos, retorna vazio
+    if (contacts.length === 0) {
+      return { matches: [], noMatch: true, suggestion: 'Você ainda não tem contatos cadastrados.' };
+    }
+
+    // Se tem muitos contatos, limita para não estourar tokens
+    const limitedContacts = contacts.slice(0, 100);
+
+    const client = await this.openaiService.getClient();
+
+    const systemPrompt = `Você é um assistente que encontra contatos por nome.
+
+TAREFA: Dado um nome de busca e uma lista de contatos, encontre os contatos que correspondem.
+
+REGRAS IMPORTANTES:
+1. Considere variações fonéticas de nomes brasileiros:
+   - Mateus = Matheus = Mattheus = Matheos
+   - Felipe = Phelipe = Phillipe = Philippe
+   - Thiago = Tiago = Tyago
+   - Wagner = Vagner
+   - Bruna = Brunna
+   - João = Joao
+   - etc.
+
+2. Considere apelidos comuns:
+   - Bia = Beatriz
+   - Duda = Maria Eduarda = Eduarda
+   - Gabi = Gabriela = Gabrielle
+   - Rafa = Rafael = Rafaela
+   - Nando = Fernando
+   - etc.
+
+3. Busca parcial: se o usuário buscar apenas o primeiro nome, encontre contatos com esse nome completo
+   - "João" encontra "João Silva", "João Pedro", etc.
+
+4. Retorne confidence de 0 a 1:
+   - 1.0 = match exato ou muito próximo
+   - 0.8-0.9 = variação fonética clara
+   - 0.6-0.7 = possível match (apelido ou parcial)
+   - Abaixo de 0.5 = não incluir
+
+RESPONDA EM JSON:
+{
+  "matches": [
+    {"id": "contact_id", "name": "Nome Completo", "confidence": 0.95, "reason": "variação de Matheus"}
+  ],
+  "noMatch": false,
+  "suggestion": null
+}
+
+Se não encontrar nenhum match, retorne:
+{
+  "matches": [],
+  "noMatch": true,
+  "suggestion": "Não encontrei ninguém com esse nome. Você quis dizer [nome similar]?"
+}`;
+
+    const contactsList = limitedContacts
+      .map((c) => `- id: ${c.id}, nome: "${c.name}"${c.context ? `, contexto: "${c.context}"` : ''}`)
+      .join('\n');
+
+    const userPrompt = `BUSCA: "${searchName}"
+
+CONTATOS:
+${contactsList}`;
+
+    try {
+      const response = await client.chat.completions.create({
+        model: 'gpt-4o-mini',
+        messages: [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ],
+        response_format: { type: 'json_object' },
+        temperature: 0.1,
+        max_tokens: 500,
+      });
+
+      const content = response.choices[0]?.message?.content;
+      if (!content) {
+        throw new Error('Resposta vazia do modelo');
+      }
+
+      const result = JSON.parse(content);
+
+      this.logger.log(
+        `[AI Search] Resultado: ${result.matches?.length || 0} matches, noMatch: ${result.noMatch}`,
+      );
+
+      return {
+        matches: Array.isArray(result.matches) ? result.matches : [],
+        noMatch: result.noMatch ?? result.matches?.length === 0,
+        suggestion: result.suggestion,
+      };
+    } catch (error) {
+      this.logger.error(`[AI Search] Erro: ${error.message}`);
+      // Fallback: retorna vazio em caso de erro
+      return { matches: [], noMatch: true };
+    }
+  }
 }

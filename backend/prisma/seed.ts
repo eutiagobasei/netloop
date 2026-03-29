@@ -1,4 +1,4 @@
-import { PrismaClient, UserRole, TagType, ConnectionStrength, SettingCategory } from '@prisma/client';
+import { PrismaClient, UserRole, ConnectionStrength, SettingCategory } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 
 const prisma = new PrismaClient();
@@ -262,11 +262,8 @@ async function main() {
 
   for (const tagData of tagsData) {
     const slug = tagData.name.toLowerCase();
-    const existingTag = await prisma.tag.findFirst({
-      where: {
-        slug,
-        clubId: null,
-      },
+    const existingTag = await prisma.tag.findUnique({
+      where: { slug },
     });
 
     if (!existingTag) {
@@ -275,35 +272,12 @@ async function main() {
           name: tagData.name,
           slug,
           color: tagData.color,
-          type: TagType.FREE,
           createdById: user.id,
         },
       });
     }
   }
-  console.log('✅ Tags livres criadas');
-
-  // Cria tag institucional para o clube SOMA
-  const existingInstitutionalTag = await prisma.tag.findFirst({
-    where: {
-      slug: 'membro-soma',
-      clubId: club.id,
-    },
-  });
-
-  if (!existingInstitutionalTag) {
-    await prisma.tag.create({
-      data: {
-        name: 'Membro SOMA',
-        slug: 'membro-soma',
-        color: '#ef4444',
-        type: TagType.INSTITUTIONAL,
-        clubId: club.id,
-        createdById: admin.id,
-      },
-    });
-  }
-  console.log('✅ Tag institucional criada');
+  console.log('✅ Tags criadas');
 
   // Cria contatos de exemplo
   const contacts = [

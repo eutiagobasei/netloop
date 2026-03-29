@@ -2,10 +2,8 @@ import { Injectable, Logger, Inject, forwardRef } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { EvolutionService } from '../whatsapp/evolution.service';
 import { ExtractionService } from '../ai/services/extraction.service';
-import { TagsService } from '../tags/tags.service';
 import { ContactInvitesService } from '../contact-invites/contact-invites.service';
 import { PhoneUtil } from '../../common/utils/phone.util';
-import { TagType } from '@prisma/client';
 import * as bcrypt from 'bcrypt';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -37,7 +35,6 @@ export class RegistrationService {
     @Inject(forwardRef(() => EvolutionService))
     private readonly evolutionService: EvolutionService,
     private readonly extractionService: ExtractionService,
-    private readonly tagsService: TagsService,
     private readonly contactInvitesService: ContactInvitesService,
   ) {}
 
@@ -324,12 +321,7 @@ Agora é só me mandar áudios ou textos sobre pessoas que conheceu! 🚀`;
       },
       include: {
         club: {
-          include: {
-            tags: {
-              where: { type: TagType.INSTITUTIONAL },
-              select: { id: true },
-            },
-          },
+          select: { id: true, name: true },
         },
       },
     });
@@ -344,7 +336,7 @@ Agora é só me mandar áudios ou textos sobre pessoas que conheceu! 🚀`;
 
     for (const invite of invites) {
       try {
-        // Cria membership
+        // Cria membership (o próprio registro em ClubMember é o "selo")
         await this.prisma.clubMember.create({
           data: {
             userId,
@@ -352,12 +344,6 @@ Agora é só me mandar áudios ou textos sobre pessoas que conheceu! 🚀`;
             isAdmin: false,
           },
         });
-
-        // Aplica tag institucional nos contatos do usuário
-        const institutionalTag = invite.club.tags[0];
-        if (institutionalTag) {
-          await this.tagsService.applyTagToAllUserContacts(userId, institutionalTag.id);
-        }
 
         // Atualiza status do convite para ACCEPTED
         await this.prisma.clubInvite.update({
